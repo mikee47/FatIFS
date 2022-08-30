@@ -201,12 +201,25 @@ struct FileDir {
 
 DRESULT FileSystem::read_sector(void* buff, LBA_t sector, UINT count)
 {
-	return partition.read(sector * SECTOR_SIZE, buff, count * SECTOR_SIZE) ? RES_OK : RES_ERROR;
+	auto addr = sector * SECTOR_SIZE;
+	auto size = count * SECTOR_SIZE;
+	if(!partition.read(addr, buff, size)) {
+		return RES_ERROR;
+	}
+	if(profiler != nullptr) {
+		profiler->read(addr, buff, size);
+	}
+	return RES_OK;
 }
 
 DRESULT FileSystem::write_sector(const void* buff, LBA_t sector, UINT count)
 {
-	return partition.write(sector * SECTOR_SIZE, buff, count * SECTOR_SIZE) ? RES_OK : RES_ERROR;
+	auto addr = sector * SECTOR_SIZE;
+	auto size = count * SECTOR_SIZE;
+	if(profiler != nullptr) {
+		profiler->write(addr, buff, size);
+	}
+	return partition.write(addr, buff, size) ? RES_OK : RES_ERROR;
 }
 
 DRESULT FileSystem::ioctl(BYTE cmd, void* buff)
@@ -332,6 +345,7 @@ int FileSystem::tryMount()
 	// get_attr("", AttributeTag::ReadAce, rootAcl.readAccess);
 	// get_attr("", AttributeTag::WriteAce, rootAcl.writeAccess);
 
+	driveIndex = pdrv;
 	mounted = true;
 	return FS_OK;
 }
@@ -388,6 +402,12 @@ int FileSystem::getinfo(Info& info)
 		info.freeSpace = fatfs.free_clst * fatfs.csize * SECTOR_SIZE;
 	}
 
+	return FS_OK;
+}
+
+int FileSystem::setProfiler(IProfiler* profiler)
+{
+	this->profiler = profiler;
 	return FS_OK;
 }
 

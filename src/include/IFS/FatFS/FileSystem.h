@@ -68,6 +68,7 @@ public:
 
 	int mount() override;
 	int getinfo(Info& info) override;
+	int setProfiler(IProfiler* profiler) override;
 	String getErrorString(int err) override;
 	int opendir(const char* path, DirHandle& dir) override;
 	int readdir(DirHandle dir, Stat& stat) override;
@@ -104,6 +105,7 @@ private:
 	int tryMount();
 
 	Storage::Partition partition;
+	IProfiler* profiler{nullptr};
 	std::unique_ptr<FileDescriptor> fileDescriptors[FATFS_MAX_FDS];
 	FATFS fatfs{};
 	bool mounted{false};
