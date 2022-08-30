@@ -663,6 +663,14 @@ int FileSystem::opendir(const char* path, DirHandle& dir)
 	CHECK_MOUNTED()
 	FS_CHECK_PATH(path)
 
+	char pathbuf[256];
+	strcpy(pathbuf, "x:/");
+	pathbuf[0] = '0' + driveIndex;
+	if(path != nullptr) {
+		strcpy(&pathbuf[3], path);
+	}
+	path = pathbuf;
+
 	auto d = new FileDir;
 	if(d == nullptr) {
 		return Error::NoMem;

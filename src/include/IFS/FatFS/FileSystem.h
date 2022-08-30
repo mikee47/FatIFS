@@ -108,8 +108,9 @@ private:
 	IProfiler* profiler{nullptr};
 	std::unique_ptr<FileDescriptor> fileDescriptors[FATFS_MAX_FDS];
 	FATFS fatfs{};
-	bool mounted{false};
 	ACL rootAcl{};
+	uint8_t driveIndex{0};
+	bool mounted{false};
 };
 
 } // namespace FAT
