@@ -28,6 +28,44 @@ namespace
 {
 IFS::FAT::FileSystem* volumes[FATFS_MAX_VOLUMES];
 
+union FatTime {
+	static constexpr unsigned BaseYear{1980};
+
+	struct {
+		uint16_t time;
+		uint16_t date;
+	};
+	struct {
+		uint32_t second : 5;
+		uint32_t minute : 6;
+		uint32_t hour : 5;
+		uint32_t day : 5;
+		uint32_t month : 4;
+		uint32_t year : 7;
+	};
+	uint32_t value;
+
+	FatTime() : value(0)
+	{
+	}
+
+	FatTime(DateTime dt)
+		: second(dt.Second / 2U), minute(dt.Minute), hour(dt.Hour), day(dt.Day), month(dt.Month + 1U),
+		  year(dt.Year - BaseYear)
+	{
+	}
+
+	explicit operator DateTime() const
+	{
+		DateTime dt;
+		if(value != 0) {
+			dt.setTime(second * 2, minute, hour, day, month - 1, year + BaseYear);
+		}
+		return dt;
+	}
+};
+static_assert(sizeof(FatTime) == 4, "Bad FatTime");
+
 int findVolume(IFS::FAT::FileSystem* fs)
 {
 	for(unsigned i = 0; i < FATFS_MAX_VOLUMES; ++i) {
@@ -126,36 +164,12 @@ IFS::FileAttributes getAttr(BYTE attr)
 
 DWORD get_fattime(void)
 {
-	if(!SystemClock.isSet()) {
-		return 0;
-	}
+	// if(!SystemClock.isSet()) {
+	// 	return 0;
+	// }
 
 	DateTime dt = SystemClock.now(eTZ_Local);
-
-	union FatTime {
-		struct {
-			uint32_t second : 5;
-			uint32_t minute : 6;
-			uint32_t hour : 5;
-			uint32_t day : 5;
-			uint32_t month : 4;
-			uint32_t year : 7;
-		};
-		uint32_t value;
-	};
-
-	static_assert(sizeof(FatTime) == 4, "Bad FatTime");
-
-	FatTime ft{{
-		.second = dt.Second / 2U,
-		.minute = dt.Minute,
-		.hour = dt.Hour,
-		.day = dt.Day,
-		.month = dt.Month + 1U,
-		.year = dt.Year - 1980U,
-	}};
-
-	return ft.value;
+	return FatTime(dt).value;
 }
 
 DSTATUS disk_status(BYTE pdrv)
@@ -584,6 +598,21 @@ int FileSystem::lseek(FileHandle file, int offset, SeekOrigin origin)
 	return (fr == FR_OK) ? offset : sysError(fr);
 }
 
+void FileSystem::fillStat(Stat& stat, FILINFO inf)
+{
+	stat = IFS::Stat{};
+	stat.fs = this;
+	stat.size = inf.fsize;
+	stat.acl = rootAcl;
+	stat.attr = getAttr(inf.fattrib);
+	stat.name.copy(inf.fname);
+
+	FatTime ft;
+	ft.date = inf.fdate;
+	ft.time = inf.ftime;
+	stat.mtime = DateTime(ft);
+}
+
 int FileSystem::stat(const char* path, Stat* stat)
 {
 	CHECK_MOUNTED()
@@ -599,13 +628,7 @@ int FileSystem::stat(const char* path, Stat* stat)
 		return FS_OK;
 	}
 
-	*stat = Stat{};
-	stat->fs = this;
-	stat->size = inf.fsize;
-	stat->acl = rootAcl;
-	stat->attr = getAttr(inf.fattrib);
-	stat->name.copy(inf.fname);
-
+	fillStat(*stat, inf);
 	return FS_OK;
 }
 
@@ -630,26 +653,31 @@ int FileSystem::fstat(FileHandle file, Stat* stat)
 
 int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, size_t size)
 {
+	debug_i("%s", __PRETTY_FUNCTION__);
 	return Error::NotImplemented;
 }
 
 int FileSystem::fgetxattr(FileHandle file, AttributeTag tag, void* buffer, size_t size)
 {
+	debug_i("%s", __PRETTY_FUNCTION__);
 	return Error::NotImplemented;
 }
 
 int FileSystem::fenumxattr(FileHandle file, AttributeEnumCallback callback, void* buffer, size_t bufsize)
 {
+	debug_i("%s", __PRETTY_FUNCTION__);
 	return Error::NotImplemented;
 }
 
 int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, size_t size)
 {
+	debug_i("%s", __PRETTY_FUNCTION__);
 	return Error::NotImplemented;
 }
 
 int FileSystem::getxattr(const char* path, AttributeTag tag, void* buffer, size_t size)
 {
+	debug_i("%s", __PRETTY_FUNCTION__);
 	return Error::NotImplemented;
 }
 
@@ -705,13 +733,9 @@ int FileSystem::readdir(DirHandle dir, Stat& stat)
 		return Error::NoMoreFiles;
 	}
 
-	stat = Stat{};
+	stat = IFS::Stat{};
 	stat.fs = this;
-	stat.size = inf.fsize;
-	stat.acl = rootAcl;
-	stat.attr = getAttr(inf.fattrib);
-	stat.name.copy(inf.fname);
-
+	fillStat(stat, inf);
 	return FS_OK;
 }
 

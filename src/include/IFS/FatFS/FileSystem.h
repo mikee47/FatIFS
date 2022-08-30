@@ -103,6 +103,7 @@ public:
 
 private:
 	int tryMount();
+	void fillStat(Stat& stat, FILINFO inf);
 
 	Storage::Partition partition;
 	IProfiler* profiler{nullptr};
