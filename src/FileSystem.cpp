@@ -311,13 +311,8 @@ int FileSystem::mount()
 
 	auto res = tryMount();
 	if(res < 0) {
-		/*
-		 * Mount failed, so we either try to repair the system or format it.
-		 * For now, just format it.
-		 */
-		debug_w("[FAT] Mount failed, formatting");
-		format();
-		res = tryMount();
+		debug_w("[FAT] Mount failed");
+		return res;
 	}
 
 	return res;
@@ -334,8 +329,9 @@ int FileSystem::tryMount()
 			return Error::NoMem;
 		}
 	}
+	driveIndex = pdrv;
 
-	auto res = f_mount(&fatfs, "", 0);
+	auto res = f_mount(&fatfs, "", 1);
 	if(res != FR_OK) {
 		int err = sysError(res);
 		debug_ifserr(err, "f_mount()");
@@ -345,7 +341,6 @@ int FileSystem::tryMount()
 	// get_attr("", AttributeTag::ReadAce, rootAcl.readAccess);
 	// get_attr("", AttributeTag::WriteAce, rootAcl.writeAccess);
 
-	driveIndex = pdrv;
 	mounted = true;
 	return FS_OK;
 }
