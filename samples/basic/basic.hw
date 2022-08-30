@@ -1,0 +1,16 @@
+{
+    "name": "Basic",
+    "base_config": "standard",
+    "options": [
+        "2m"
+    ],
+    "partitions": {
+        "fat1": {
+            "device": "spiFlash",
+            "address": "0x00090000",
+            "size": "1M",
+            "type": "data",
+            "subtype": "fat"
+        }
+    }
+}

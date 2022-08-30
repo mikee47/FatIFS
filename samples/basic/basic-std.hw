@@ -1,0 +1,9 @@
+{
+    "name": "Basic (STD)",
+    "base_config": "basic",
+    "partitions": {
+        "rom0": {
+            "size": "512K"
+        }
+    }
+}

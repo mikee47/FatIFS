@@ -1,0 +1,9 @@
+{
+    "name": "Basic (ESP32)",
+    "base_config": "basic",
+    "partitions": {
+        "factory": {
+            "size": "512K"
+        }
+    }
+}
