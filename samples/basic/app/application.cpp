@@ -2,14 +2,9 @@
 #include <IFS/FatFS.h>
 #include <IFS/FileCopier.h>
 #include <IFS/Debug.h>
-#include <Data/Stream/IFS/DirectoryTemplate.h>
-#include <Data/Stream/MemoryDataStream.h>
-#include <Data/CStringArray.h>
 
 namespace
 {
-IMPORT_FSTR(listing_txt, PROJECT_DIR "/resource/listing.txt")
-
 bool fscopy(const char* srcFile)
 {
 	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fwfs);
@@ -45,42 +40,6 @@ bool fscopy(const char* srcFile)
 	return res;
 }
 
-void printDirectory(const String& path)
-{
-	auto dir = new Directory;
-	if(!dir->open(path)) {
-		debug_e("Open '%s' failed: %s", path.c_str(), dir->getLastErrorString().c_str());
-		delete dir;
-		return;
-	}
-
-	CStringArray paths;
-
-	{
-		auto source = new FlashMemoryStream(listing_txt);
-		IFS::DirectoryTemplate tmpl(source, dir);
-		Serial.copyFrom(&tmpl);
-
-		dir->rewind();
-		while(dir->next()) {
-			if(!dir->stat().isDir()) {
-				continue;
-			}
-			paths += dir->stat().name;
-		}
-	}
-
-	for(auto sub : paths) {
-		String s;
-		if(path.length() != 0) {
-			s += path;
-			s += '/';
-		}
-		s += sub;
-		printDirectory(s);
-	}
-}
-
 void fsinit()
 {
 	DEFINE_FSTR_LOCAL(newfile_txt, "The name of this file is, perhaps, a little long.txt");
@@ -112,7 +71,7 @@ void fsinit()
 
 	IFS::Debug::printFsInfo(Serial, *fs);
 
-	printDirectory("");
+	IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
 }
 
 } // namespace
