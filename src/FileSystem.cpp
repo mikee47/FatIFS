@@ -455,7 +455,20 @@ int FileSystem::getinfo(Info& info)
 	if(mounted) {
 		info.attr |= Attribute::Mounted;
 		info.volumeSize = partition.size();
-		info.freeSpace = fatfs.free_clst * fatfs.csize * SECTOR_SIZE;
+		FatPath fatpath(driveIndex);
+		DWORD nclst;
+		FATFS* fs;
+		FRESULT fr = f_getfree(fatpath, &nclst, &fs);
+		if(fr == FR_OK) {
+			info.freeSpace = nclst * fs->csize * SECTOR_SIZE;
+		}
+		char label[32];
+		DWORD vsn;
+		fr = f_getlabel(fatpath, label, &vsn);
+		if(fr == FR_OK) {
+			info.name.copy(label);
+			info.volumeID = vsn;
+		}
 	}
 
 	return FS_OK;
