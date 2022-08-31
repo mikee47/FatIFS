@@ -481,15 +481,6 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 	CHECK_MOUNTED()
 	FS_CHECK_PATH(path)
 
-	// If file is marked read-only, fail write requests
-	// if(flags[OpenFlag::Write]) {
-	// 	FileAttributes attr;
-	// 	get_attr(path ?: "", AttributeTag::FileAttributes, attr);
-	// 	if(attr[FileAttribute::ReadOnly]) {
-	// 		return Error::ReadOnly;
-	// 	}
-	// }
-
 	BYTE mode;
 	if(mapFileOpenFlags(flags, mode).any()) {
 		return FileHandle(Error::NotSupported);
@@ -520,11 +511,6 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 		fd.reset();
 		return err;
 	}
-
-	// if(isRootPath(path)) {
-	// 	fd->flags += FileDescriptor::Flag::IsRoot;
-	// }
-	// fd->flags[FileDescriptor::Flag::Write] = flags[OpenFlag::Write];
 
 	// Copy name into descriptor
 	if(path != nullptr) {
@@ -763,8 +749,20 @@ int FileSystem::fgetxattr(FileHandle file, AttributeTag tag, void* buffer, size_
 
 int FileSystem::fenumxattr(FileHandle file, AttributeEnumCallback callback, void* buffer, size_t bufsize)
 {
-	debug_i("%s", __PRETTY_FUNCTION__);
-	return Error::NotImplemented;
+	GET_FD()
+
+	TimeStamp mtime;
+	mtime = time_t(FatTime(fd->fil.obj.modtime));
+	FileAttributes attr = getAttr(fd->fil.obj.attr);
+
+	AttributeEnum e{buffer, bufsize};
+	e.set(AttributeTag::ModifiedTime, mtime);
+	if(!callback(e)) {
+		return 1;
+	}
+	e.set(AttributeTag::FileAttributes, attr);
+	callback(e);
+	return 2;
 }
 
 int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, size_t size)
@@ -815,8 +813,32 @@ int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, s
 
 int FileSystem::getxattr(const char* path, AttributeTag tag, void* buffer, size_t size)
 {
-	debug_i("%s", __PRETTY_FUNCTION__);
-	return Error::NotImplemented;
+	CHECK_MOUNTED()
+	FS_CHECK_PATH(path)
+
+	FILINFO inf;
+	FRESULT fr = f_stat(FatPath(driveIndex, path), &inf);
+	if(fr != FR_OK) {
+		return sysError(fr);
+	}
+
+	switch(tag) {
+	case AttributeTag::ModifiedTime: {
+		TimeStamp mtime;
+		mtime = time_t(FatTime(inf.fdate, inf.ftime));
+		memcpy(buffer, &mtime, std::min(size, sizeof(mtime)));
+		return sizeof(mtime);
+	}
+
+	case AttributeTag::FileAttributes: {
+		FileAttributes attr = getAttr(inf.fattrib);
+		memcpy(buffer, &attr, std::min(size, sizeof(attr)));
+		return sizeof(attr);
+	}
+
+	default:
+		return Error::NotImplemented;
+	}
 }
 
 int FileSystem::opendir(const char* path, DirHandle& dir)
@@ -835,8 +857,6 @@ int FileSystem::opendir(const char* path, DirHandle& dir)
 		delete d;
 		return err;
 	}
-
-	// lfs_dir_seek(&lfs, &d->dir, 2);
 
 	dir = DirHandle(d);
 	return FS_OK;
@@ -906,13 +926,6 @@ int FileSystem::remove(const char* path)
 	if(isRootPath(path)) {
 		return Error::BadParam;
 	}
-
-	// Check file is not marked read-only
-	// FileAttributes attr{};
-	// get_attr(path, AttributeTag::FileAttributes, attr);
-	// if(attr[FileAttribute::ReadOnly]) {
-	// 	return Error::ReadOnly;
-	// }
 
 	FRESULT fr = f_unlink(FatPath(driveIndex, path));
 	return sysError(fr);
