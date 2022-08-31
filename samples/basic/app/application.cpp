@@ -1,6 +1,7 @@
 #include <SmingCore.h>
 #include <IFS/FatFS.h>
 #include <IFS/FileCopier.h>
+#include <IFS/Debug.h>
 #include <Data/Stream/IFS/DirectoryTemplate.h>
 #include <Data/Stream/MemoryDataStream.h>
 #include <Data/CStringArray.h>
@@ -108,6 +109,8 @@ void fsinit()
 	m_puts(_F("Read: "));
 	m_nputs(s.c_str(), s.length());
 	m_puts("\r\n");
+
+	IFS::Debug::printFsInfo(Serial, *fs);
 
 	printDirectory("");
 }
