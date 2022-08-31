@@ -38,7 +38,7 @@ namespace FAT
 // Maximum file handle value
 #define FATFS_HANDLE_MAX (FATFS_HANDLE_MIN + FATFS_MAX_FDS - 1)
 
-#define FATFS_MAX_VOLUMES 4
+#define FATFS_MAX_VOLUMES FF_VOLUMES
 #define FATFS_SECTOR_SIZE 512
 
 /**

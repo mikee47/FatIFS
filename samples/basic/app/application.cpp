@@ -7,7 +7,6 @@
 
 namespace
 {
-#define FF_CHECK(func, err) debug_i(func "(): %s", fileGetErrorString(err).c_str())
 IMPORT_FSTR(listing_txt, PROJECT_DIR "/resource/listing.txt")
 
 bool fscopy(const char* srcFile)
@@ -98,7 +97,7 @@ void fsinit()
 		fscopy("fwfs1.bin");
 
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
-		FF_CHECK("fileSetContent", err);
+		debug_i("fileSetContent(): %s", fileGetErrorString(err).c_str());
 	} else {
 		debug_e("Unhandled error during mount: %s", fs->getErrorString(err).c_str());
 		return;

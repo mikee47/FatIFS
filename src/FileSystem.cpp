@@ -28,6 +28,9 @@ namespace
 {
 IFS::FAT::FileSystem* volumes[FATFS_MAX_VOLUMES];
 
+/**
+ * @brief FAT timestamp support
+ */
 union FatTime {
 	static constexpr unsigned BaseYear{1980};
 
@@ -45,7 +48,11 @@ union FatTime {
 	};
 	uint32_t value;
 
-	FatTime(uint32_t value = 0) : value(value)
+	FatTime(uint32_t fdatetime = 0) : value(fdatetime)
+	{
+	}
+
+	FatTime(uint16_t fdate, uint16_t ftime) : time(ftime), date(fdate)
 	{
 	}
 
@@ -68,12 +75,37 @@ union FatTime {
 		return dt;
 	}
 
-	operator time_t() const
+	explicit operator time_t() const
 	{
 		return DateTime(*this);
 	}
 };
 static_assert(sizeof(FatTime) == 4, "Bad FatTime");
+
+/**
+ * @brief Produces fully-qualified paths so drives get routed to correct FileSystem.
+ */
+class FatPath
+{
+public:
+	FatPath(uint8_t driveIndex, const char* path = nullptr)
+	{
+		auto len = path ? strlen(path) : 0;
+		buffer.reset(new char[4 + len]);
+		strcpy(buffer.get(), "x:/");
+		buffer[0] = '0' + driveIndex;
+		memcpy(&buffer[3], path, len);
+		buffer[3 + len] = '\0';
+	}
+
+	operator const char*() const
+	{
+		return buffer.get();
+	}
+
+private:
+	CString buffer;
+};
 
 int findVolume(IFS::FAT::FileSystem* fs)
 {
@@ -137,9 +169,8 @@ int sysError(FRESULT res)
 	case FR_INVALID_OBJECT:
 		return Error::BadObject;
 	case FR_INVALID_DRIVE:
-		return Error::BadVolumeIndex;
 	case FR_NOT_ENABLED:
-		return Error::NoMem;
+		return Error::BadVolumeIndex;
 	case FR_NO_FILESYSTEM:
 		return Error::BadFileSystem;
 	case FR_TOO_MANY_OPEN_FILES:
@@ -173,9 +204,11 @@ IFS::FileAttributes getAttr(BYTE attr)
 
 DWORD get_fattime(void)
 {
-	// if(!SystemClock.isSet()) {
-	// 	return 0;
-	// }
+#ifndef ARCH_HOST
+	if(!SystemClock.isSet()) {
+		return 0;
+	}
+#endif
 
 	DateTime dt = SystemClock.now(eTZ_UTC);
 	return FatTime(dt).value;
@@ -195,18 +228,21 @@ DSTATUS disk_initialize(BYTE pdrv)
 
 DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
 {
+	debug_d("%s(pdrv=%u, sector=%u, count=%u)", __FUNCTION__, pdrv, sector, count);
 	auto fs = getVolume(pdrv);
 	return fs ? fs->read_sector(buff, sector, count) : RES_PARERR;
 }
 
 DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
 {
+	debug_d("%s(pdrv=%u, sector=%u, count=%u)", __FUNCTION__, pdrv, sector, count);
 	auto fs = getVolume(pdrv);
 	return fs ? fs->write_sector(buff, sector, count) : RES_PARERR;
 }
 
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
 {
+	debug_d("%s(pdrv=%u, cmd=%u)", __FUNCTION__, pdrv, cmd);
 	auto fs = getVolume(pdrv);
 	return fs ? fs->ioctl(cmd, buff) : RES_PARERR;
 }
@@ -349,17 +385,19 @@ int FileSystem::tryMount()
 	if(pdrv < 0) {
 		pdrv = allocateVolume(this);
 		if(pdrv < 0) {
-			return Error::NoMem;
+			return Error::BadVolumeIndex;
 		}
 	}
 	driveIndex = pdrv;
 
-	auto res = f_mount(&fatfs, "", 1);
+	auto res = f_mount(&fatfs, FatPath(driveIndex), 1);
 	if(res != FR_OK) {
 		int err = sysError(res);
 		debug_ifserr(err, "f_mount()");
 		return err;
 	}
+
+	debug_d("Mounted, pdrv=%u", driveIndex);
 
 	// get_attr("", AttributeTag::ReadAce, rootAcl.readAccess);
 	// get_attr("", AttributeTag::WriteAce, rootAcl.writeAccess);
@@ -378,7 +416,7 @@ int FileSystem::format()
 
 	BYTE work_area[FF_MAX_SS];
 	MKFS_PARM opt{FM_ANY};
-	auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
+	auto fr = f_mkfs(FatPath(driveIndex), &opt, work_area, sizeof(work_area));
 	if(fr != FR_OK) {
 		auto err = sysError(fr);
 		debug_ifserr(err, "format()");
@@ -475,15 +513,13 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 	}
 
 	auto& fd = fileDescriptors[file - FATFS_HANDLE_MIN];
-	FRESULT fr = f_open(&fd->fil, path, mode);
+	FRESULT fr = f_open(&fd->fil, FatPath(driveIndex, path), mode);
 	if(fr != FR_OK) {
 		int err = sysError(fr);
 		debug_d("open('%s'): %s", path, getErrorString(file).c_str());
 		fd.reset();
 		return err;
 	}
-
-	// get_attr(fd->fil, AttributeTag::ModifiedTime, fd->mtime);
 
 	// if(isRootPath(path)) {
 	// 	fd->flags += FileDescriptor::Flag::IsRoot;
@@ -564,8 +600,6 @@ int FileSystem::read(FileHandle file, void* data, size_t size)
 		return err;
 	}
 
-	debug_i("read(): %u", res);
-
 	return res;
 }
 
@@ -615,11 +649,7 @@ void FileSystem::fillStat(Stat& stat, FILINFO inf)
 	stat.acl = rootAcl;
 	stat.attr = getAttr(inf.fattrib);
 	stat.name.copy(inf.fname);
-
-	FatTime ft;
-	ft.date = inf.fdate;
-	ft.time = inf.ftime;
-	stat.mtime = DateTime(ft);
+	stat.mtime = time_t(FatTime(inf.fdate, inf.ftime));
 }
 
 int FileSystem::stat(const char* path, Stat* stat)
@@ -628,7 +658,7 @@ int FileSystem::stat(const char* path, Stat* stat)
 	FS_CHECK_PATH(path);
 
 	FILINFO inf;
-	FRESULT fr = f_stat(path, &inf);
+	FRESULT fr = f_stat(FatPath(driveIndex, path), &inf);
 	if(fr != FR_OK) {
 		return sysError(fr);
 	}
@@ -655,7 +685,7 @@ int FileSystem::fstat(FileHandle file, Stat* stat)
 	stat->acl = rootAcl;
 	stat->attr = getAttr(fd->fil.obj.attr);
 	stat->name.copy(fd->name.c_str());
-	// stat->mtime = fd->mtime;
+	stat->mtime = time_t(FatTime(fd->fil.obj.modtime));
 
 	return FS_OK;
 }
@@ -667,8 +697,7 @@ int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, s
 
 	const uint8_t FA_MODIFIED = 0x40; /* File has been modified */
 
-	auto attrSize = getAttributeSize(tag);
-	if(attrSize != 0 && size != attrSize) {
+	if(size != getAttributeSize(tag)) {
 		return Error::BadParam;
 	}
 
@@ -677,7 +706,7 @@ int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, s
 	switch(tag) {
 	case AttributeTag::ModifiedTime: {
 		TimeStamp ts;
-		memcpy(&ts, data, attrSize);
+		memcpy(&ts, data, size);
 		fd->fil.obj.modtime = FatTime(ts).value;
 		changed = true;
 		break;
@@ -685,7 +714,7 @@ int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, s
 
 	case AttributeTag::FileAttributes: {
 		FileAttributes attr;
-		memcpy(&attr, data, attrSize);
+		memcpy(&attr, data, size);
 		fd->fil.obj.attr &= ~(AM_ARC | AM_RDO);
 		if(attr[FileAttribute::Archive]) {
 			fd->fil.obj.attr |= AM_ARC;
@@ -716,9 +745,15 @@ int FileSystem::fgetxattr(FileHandle file, AttributeTag tag, void* buffer, size_
 	switch(tag) {
 	case AttributeTag::ModifiedTime: {
 		TimeStamp mtime;
-		mtime = FatTime(fd->fil.obj.modtime);
+		mtime = time_t(FatTime(fd->fil.obj.modtime));
 		memcpy(buffer, &mtime, std::min(size, sizeof(mtime)));
 		return sizeof(mtime);
+	}
+
+	case AttributeTag::FileAttributes: {
+		FileAttributes attr = getAttr(fd->fil.obj.attr);
+		memcpy(buffer, &attr, std::min(size, sizeof(attr)));
+		return sizeof(attr);
 	}
 
 	default:
@@ -734,8 +769,48 @@ int FileSystem::fenumxattr(FileHandle file, AttributeEnumCallback callback, void
 
 int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, size_t size)
 {
-	debug_i("%s", __PRETTY_FUNCTION__);
-	return Error::NotImplemented;
+	CHECK_MOUNTED()
+	FS_CHECK_PATH(path)
+
+	if(data == nullptr) {
+		// Attribute deletion
+		return Error::NotSupported;
+	}
+
+	if(size != getAttributeSize(tag)) {
+		return Error::BadParam;
+	}
+
+	switch(tag) {
+	case AttributeTag::ModifiedTime: {
+		TimeStamp ts;
+		memcpy(&ts, data, size);
+		FatTime ft(ts);
+		FILINFO inf{
+			.fdate = ft.date,
+			.ftime = ft.time,
+		};
+		FRESULT fr = f_utime(FatPath(driveIndex, path), &inf);
+		return sysError(fr);
+	}
+
+	case AttributeTag::FileAttributes: {
+		FileAttributes attr;
+		memcpy(&attr, data, size);
+		uint8_t fattr{0};
+		if(attr[FileAttribute::Archive]) {
+			fattr |= AM_ARC;
+		}
+		if(attr[FileAttribute::ReadOnly]) {
+			fattr |= AM_RDO;
+		}
+		FRESULT fr = f_chmod(FatPath(driveIndex, path), fattr, AM_ARC | AM_RDO);
+		return sysError(fr);
+	}
+
+	default:
+		return Error::NotImplemented;
+	}
 }
 
 int FileSystem::getxattr(const char* path, AttributeTag tag, void* buffer, size_t size)
@@ -749,20 +824,12 @@ int FileSystem::opendir(const char* path, DirHandle& dir)
 	CHECK_MOUNTED()
 	FS_CHECK_PATH(path)
 
-	char pathbuf[256];
-	strcpy(pathbuf, "x:/");
-	pathbuf[0] = '0' + driveIndex;
-	if(path != nullptr) {
-		strcpy(&pathbuf[3], path);
-	}
-	path = pathbuf;
-
 	auto d = new FileDir;
 	if(d == nullptr) {
 		return Error::NoMem;
 	}
 
-	FRESULT fr = f_opendir(&d->dir, path);
+	FRESULT fr = f_opendir(&d->dir, FatPath(driveIndex, path));
 	if(fr != FR_OK) {
 		int err = sysError(fr);
 		delete d;
@@ -818,7 +885,7 @@ int FileSystem::mkdir(const char* path)
 		return Error::BadParam;
 	}
 
-	FRESULT fr = f_mkdir(path);
+	FRESULT fr = f_mkdir(FatPath(driveIndex, path));
 	return sysError(fr);
 }
 
@@ -829,7 +896,7 @@ int FileSystem::rename(const char* oldpath, const char* newpath)
 		return Error::BadParam;
 	}
 
-	FRESULT fr = f_rename(oldpath, newpath);
+	FRESULT fr = f_rename(FatPath(driveIndex, oldpath), FatPath(driveIndex, newpath));
 	return sysError(fr);
 }
 
@@ -847,7 +914,7 @@ int FileSystem::remove(const char* path)
 	// 	return Error::ReadOnly;
 	// }
 
-	FRESULT fr = f_unlink(path);
+	FRESULT fr = f_unlink(FatPath(driveIndex, path));
 	return sysError(fr);
 }
 
