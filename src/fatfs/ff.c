@@ -3696,6 +3696,7 @@ FRESULT f_open (
 #else
 					res = dir_register(&dj);
 #endif
+					dj.obj.modtime = GET_FATTIME();
 				}
 				mode |= FA_CREATE_ALWAYS;		/* File is created */
 			}
@@ -3712,11 +3713,12 @@ FRESULT f_open (
 					/* Get current allocation info */
 					fp->obj.fs = fs;
 					init_alloc_info(fs, &fp->obj);
+					fp->obj.modtime = GET_FATTIME();
 					/* Set directory entry block initial state */
 					memset(fs->dirbuf + 2, 0, 30);	/* Clear 85 entry except for NumSec */
 					memset(fs->dirbuf + 38, 0, 26);	/* Clear C0 entry except for NumName and NameHash */
 					fs->dirbuf[XDIR_Attr] = AM_ARC;
-					st_dword(fs->dirbuf + XDIR_CrtTime, GET_FATTIME());
+					st_dword(fs->dirbuf + XDIR_CrtTime, fp->obj.modtime);
 					fs->dirbuf[XDIR_GenFlags] = 1;
 					res = store_xdir(&dj);
 					if (res == FR_OK && fp->obj.sclust != 0) {	/* Remove the cluster chain if exist */
@@ -3784,12 +3786,14 @@ FRESULT f_open (
 				fp->obj.c_scl = dj.obj.sclust;							/* Get containing directory info */
 				fp->obj.c_size = ((DWORD)dj.obj.objsize & 0xFFFFFF00) | dj.obj.stat;
 				fp->obj.c_ofs = dj.blk_ofs;
+				fp->obj.modtime = ld_dword(fs->dirbuf + XDIR_ModTime);		/* Current modification time */
 				init_alloc_info(fs, &fp->obj);
 			} else
 #endif
 			{
 				fp->obj.sclust = ld_clust(fs, dj.dir);					/* Get object allocation info */
 				fp->obj.objsize = ld_dword(dj.dir + DIR_FileSize);
+				fp->obj.modtime = ld_dword(dj.dir + DIR_ModTime);		/* Current modification time */
 			}
 #if FF_USE_FASTSEEK
 			fp->cltbl = 0;		/* Disable fast seek mode */
@@ -4057,6 +4061,7 @@ FRESULT f_write (
 	}
 
 	fp->flag |= FA_MODIFIED;				/* Set file change flag */
+	fp->obj.modtime = GET_FATTIME();
 
 	LEAVE_FF(fs, FR_OK);
 }
@@ -4088,7 +4093,7 @@ FRESULT f_sync (
 			}
 #endif
 			/* Update the directory entry */
-			tm = GET_FATTIME();				/* Modified time */
+			tm = fp->obj.modtime;			/* Modified time */
 #if FF_FS_EXFAT
 			if (fs->fs_type == FS_EXFAT) {
 				res = fill_first_frag(&fp->obj);	/* Fill first fragment on the FAT if needed */

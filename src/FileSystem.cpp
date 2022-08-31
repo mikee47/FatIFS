@@ -45,7 +45,11 @@ union FatTime {
 	};
 	uint32_t value;
 
-	FatTime() : value(0)
+	FatTime(uint32_t value = 0) : value(value)
+	{
+	}
+
+	FatTime(IFS::TimeStamp ts) : FatTime(DateTime(ts))
 	{
 	}
 
@@ -55,13 +59,18 @@ union FatTime {
 	{
 	}
 
-	explicit operator DateTime() const
+	operator DateTime() const
 	{
 		DateTime dt;
 		if(value != 0) {
 			dt.setTime(second * 2, minute, hour, day, month - 1, year + BaseYear);
 		}
 		return dt;
+	}
+
+	operator time_t() const
+	{
+		return DateTime(*this);
 	}
 };
 static_assert(sizeof(FatTime) == 4, "Bad FatTime");
@@ -168,7 +177,7 @@ DWORD get_fattime(void)
 	// 	return 0;
 	// }
 
-	DateTime dt = SystemClock.now(eTZ_Local);
+	DateTime dt = SystemClock.now(eTZ_UTC);
 	return FatTime(dt).value;
 }
 
@@ -653,14 +662,68 @@ int FileSystem::fstat(FileHandle file, Stat* stat)
 
 int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, size_t size)
 {
-	debug_i("%s", __PRETTY_FUNCTION__);
-	return Error::NotImplemented;
+	GET_FD()
+	CHECK_WRITE()
+
+	const uint8_t FA_MODIFIED = 0x40; /* File has been modified */
+
+	auto attrSize = getAttributeSize(tag);
+	if(attrSize != 0 && size != attrSize) {
+		return Error::BadParam;
+	}
+
+	bool changed{false};
+
+	switch(tag) {
+	case AttributeTag::ModifiedTime: {
+		TimeStamp ts;
+		memcpy(&ts, data, attrSize);
+		fd->fil.obj.modtime = FatTime(ts).value;
+		changed = true;
+		break;
+	}
+
+	case AttributeTag::FileAttributes: {
+		FileAttributes attr;
+		memcpy(&attr, data, attrSize);
+		fd->fil.obj.attr &= ~(AM_ARC | AM_RDO);
+		if(attr[FileAttribute::Archive]) {
+			fd->fil.obj.attr |= AM_ARC;
+			changed = true;
+		}
+		if(attr[FileAttribute::ReadOnly]) {
+			fd->fil.obj.attr |= AM_RDO;
+			changed = true;
+		}
+		break;
+	}
+
+	default:
+		return Error::NotImplemented;
+	}
+
+	if(changed) {
+		fd->fil.flag |= FA_MODIFIED;
+	}
+
+	return FS_OK;
 }
 
 int FileSystem::fgetxattr(FileHandle file, AttributeTag tag, void* buffer, size_t size)
 {
-	debug_i("%s", __PRETTY_FUNCTION__);
-	return Error::NotImplemented;
+	GET_FD()
+
+	switch(tag) {
+	case AttributeTag::ModifiedTime: {
+		TimeStamp mtime;
+		mtime = FatTime(fd->fil.obj.modtime);
+		memcpy(buffer, &mtime, std::min(size, sizeof(mtime)));
+		return sizeof(mtime);
+	}
+
+	default:
+		return Error::NotImplemented;
+	}
 }
 
 int FileSystem::fenumxattr(FileHandle file, AttributeEnumCallback callback, void* buffer, size_t bufsize)
