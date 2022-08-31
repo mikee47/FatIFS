@@ -642,7 +642,7 @@ int FileSystem::lseek(FileHandle file, int offset, SeekOrigin origin)
 
 void FileSystem::fillStat(Stat& stat, FILINFO inf)
 {
-	stat = IFS::Stat{};
+	stat = Stat{};
 	stat.fs = this;
 	stat.size = inf.fsize;
 	stat.acl = rootAcl;
@@ -654,7 +654,16 @@ void FileSystem::fillStat(Stat& stat, FILINFO inf)
 int FileSystem::stat(const char* path, Stat* stat)
 {
 	CHECK_MOUNTED()
-	FS_CHECK_PATH(path);
+	if(isRootPath(path)) {
+		if(stat != nullptr) {
+			*stat = IFS::Stat{};
+			stat->fs = this;
+			stat->acl = rootAcl;
+			stat->attr = FileAttribute::Directory;
+			stat->mtime = fsGetTimeUTC();
+		}
+		return FS_OK;
+	}
 
 	FILINFO inf;
 	FRESULT fr = f_stat(FatPath(driveIndex, path), &inf);
