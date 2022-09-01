@@ -2,9 +2,30 @@
 #include <IFS/FatFS.h>
 #include <IFS/FileCopier.h>
 #include <IFS/Debug.h>
+#include <IFS/FileSystem.h>
+#include <Storage/FileDevice.h>
+#include <Storage/DiskDevice.h>
+#include <Storage/Debug.h>
 
 namespace
 {
+DEFINE_FSTR(test_image, "/mnt/c/temp/2017-07-05-raspbian-jessie-lite.img")
+
+Storage::Device* mountTestImage(const String& tag, const String& filename)
+{
+	auto& hfs = IFS::Host::getFileSystem();
+	auto f = hfs.open(filename, IFS::File::ReadOnly);
+	if(f < 0) {
+		debug_e("Failed to open '%s': %s", filename.c_str(), hfs.getErrorString(f).c_str());
+		return nullptr;
+	}
+	auto dev = new Storage::FileDevice(tag, hfs, f);
+	Storage::registerDevice(dev);
+	Storage::scanDiskPartitions(*dev);
+
+	return dev;
+}
+
 bool fscopy(const char* srcFile)
 {
 	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fwfs);
@@ -42,6 +63,12 @@ bool fscopy(const char* srcFile)
 
 void fsinit()
 {
+	DEFINE_FSTR(test_image, "/mnt/c/temp/2017-07-05-raspbian-jessie-lite.img")
+	auto dev = mountTestImage("TEST", test_image);
+
+	Storage::Debug::listPartitions(Serial);
+	return;
+
 	DEFINE_FSTR_LOCAL(newfile_txt, "The name of this file is, perhaps, a little long.txt");
 
 	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
