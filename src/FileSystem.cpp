@@ -19,6 +19,7 @@
 
 #include "include/IFS/FatFS/FileSystem.h"
 #include "include/IFS/FatFS/Error.h"
+#include "include/IFS/FatFS/FatTime.h"
 #include <IFS/Util.h>
 #include <SystemClock.h>
 
@@ -27,60 +28,6 @@
 namespace
 {
 IFS::FAT::FileSystem* volumes[FATFS_MAX_VOLUMES];
-
-/**
- * @brief FAT timestamp support
- */
-union FatTime {
-	static constexpr unsigned BaseYear{1980};
-
-	struct {
-		uint16_t time;
-		uint16_t date;
-	};
-	struct {
-		uint32_t second : 5;
-		uint32_t minute : 6;
-		uint32_t hour : 5;
-		uint32_t day : 5;
-		uint32_t month : 4;
-		uint32_t year : 7;
-	};
-	uint32_t value;
-
-	FatTime(uint32_t fdatetime = 0) : value(fdatetime)
-	{
-	}
-
-	FatTime(uint16_t fdate, uint16_t ftime) : time(ftime), date(fdate)
-	{
-	}
-
-	FatTime(IFS::TimeStamp ts) : FatTime(DateTime(ts))
-	{
-	}
-
-	FatTime(DateTime dt)
-		: second(dt.Second / 2U), minute(dt.Minute), hour(dt.Hour), day(dt.Day), month(dt.Month + 1U),
-		  year(dt.Year - BaseYear)
-	{
-	}
-
-	operator DateTime() const
-	{
-		DateTime dt;
-		if(value != 0) {
-			dt.setTime(second * 2, minute, hour, day, month - 1, year + BaseYear);
-		}
-		return dt;
-	}
-
-	explicit operator time_t() const
-	{
-		return DateTime(*this);
-	}
-};
-static_assert(sizeof(FatTime) == 4, "Bad FatTime");
 
 /**
  * @brief Produces fully-qualified paths so drives get routed to correct FileSystem.
