@@ -306,7 +306,7 @@ int FileSystem::format()
 	mounted = false;
 
 	BYTE work_area[FF_MAX_SS];
-	MKFS_PARM opt{FM_ANY};
+	MKFS_PARM opt{FM_ANY | FM_SFD};
 	currentVolume = this;
 	auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
 	if(fr != FR_OK) {

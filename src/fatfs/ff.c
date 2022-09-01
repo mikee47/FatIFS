@@ -3195,59 +3195,6 @@ static UINT check_fs (	/* 0:FAT/FAT32 VBR, 1:exFAT VBR, 2:Not FAT and valid BS, 
 }
 
 
-/* Find an FAT volume */
-/* (It supports only generic partitioning rules, MBR, GPT and SFD) */
-
-static UINT find_volume (	/* Returns BS status found in the hosting drive */
-	FATFS* fs,		/* Filesystem object */
-	UINT part		/* Partition to fined = 0:auto, 1..:forced */
-)
-{
-	UINT fmt, i;
-	DWORD mbr_pt[4];
-
-
-	fmt = check_fs(fs, 0);				/* Load sector 0 and check if it is an FAT VBR as SFD format */
-	if (fmt != 2 && (fmt >= 3 || part == 0)) return fmt;	/* Returns if it is an FAT VBR as auto scan, not a BS or disk error */
-
-	/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
-
-#if FF_LBA64
-	if (fs->win[MBR_Table + PTE_System] == 0xEE) {	/* GPT protective MBR? */
-		DWORD n_ent, v_ent, ofs;
-		QWORD pt_lba;
-
-		if (move_window(fs, 1) != FR_OK) return 4;	/* Load GPT header sector (next to MBR) */
-		if (!test_gpt_header(fs->win)) return 3;	/* Check if GPT header is valid */
-		n_ent = ld_dword(fs->win + GPTH_PtNum);		/* Number of entries */
-		pt_lba = ld_qword(fs->win + GPTH_PtOfs);	/* Table location */
-		for (v_ent = i = 0; i < n_ent; i++) {		/* Find FAT partition */
-			if (move_window(fs, pt_lba + i * SZ_GPTE / SS(fs)) != FR_OK) return 4;	/* PT sector */
-			ofs = i * SZ_GPTE % SS(fs);												/* Offset in the sector */
-			if (!memcmp(fs->win + ofs + GPTE_PtGuid, GUID_MS_Basic, 16)) {	/* MS basic data partition? */
-				v_ent++;
-				fmt = check_fs(fs, ld_qword(fs->win + ofs + GPTE_FstLba));	/* Load VBR and check status */
-				if (part == 0 && fmt <= 1) return fmt;			/* Auto search (valid FAT volume found first) */
-				if (part != 0 && v_ent == part) return fmt;		/* Forced partition order (regardless of it is valid or not) */
-			}
-		}
-		return 3;	/* Not found */
-	}
-#endif
-	if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has 4 partitions max */
-	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
-		mbr_pt[i] = ld_dword(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
-	}
-	i = part ? part - 1 : 0;		/* Table index to find first */
-	do {							/* Find an FAT volume */
-		fmt = mbr_pt[i] ? check_fs(fs, mbr_pt[i]) : 3;	/* Check if the partition is FAT */
-	} while (part == 0 && fmt >= 2 && ++i < 4);
-	return fmt;
-}
-
-
-
-
 /*-----------------------------------------------------------------------*/
 /* Determine logical drive number and mount the volume if needed         */
 /*-----------------------------------------------------------------------*/
@@ -3289,8 +3236,8 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 	if (SS(fs) > FF_MAX_SS || SS(fs) < FF_MIN_SS || (SS(fs) & (SS(fs) - 1))) return FR_DISK_ERR;
 #endif
 
-	/* Find an FAT volume on the drive */
-	fmt = find_volume(fs, LD2PT(vol));
+	/* Load sector 0 and check if it is an FAT VBR as SFD format */
+	fmt = check_fs(fs, 0);
 	if (fmt == 4) return FR_DISK_ERR;		/* An error occured in the disk I/O layer */
 	if (fmt >= 2) return FR_NO_FILESYSTEM;	/* No FAT volume is found */
 	bsect = fs->winsect;					/* Volume offset */
