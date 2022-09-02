@@ -11,20 +11,38 @@ namespace
 {
 DEFINE_FSTR(test_image, "/mnt/c/temp/2017-07-05-raspbian-jessie-lite.img")
 
-Storage::Device* mountTestImage(const String& tag, const String& filename)
+#ifdef ARCH_HOST
+void mountTestImage(const String& tag, const String& filename)
 {
 	auto& hfs = IFS::Host::getFileSystem();
 	auto f = hfs.open(filename, IFS::File::ReadOnly);
 	if(f < 0) {
 		debug_e("Failed to open '%s': %s", filename.c_str(), hfs.getErrorString(f).c_str());
-		return nullptr;
+		return;
 	}
 	auto dev = new Storage::FileDevice(tag, hfs, f);
 	Storage::registerDevice(dev);
 	Storage::scanDiskPartitions(*dev);
 
-	return dev;
+	auto part = dev->partitions()[0];
+	auto fs = IFS::createFatFilesystem(part);
+	int err = fs->mount();
+	debug_i("mount: %s", fs->getErrorString(err).c_str());
+	if(err == FS_OK) {
+		IFS::Debug::printFsInfo(Serial, *fs);
+		IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+
+		FileStream file(fs);
+		file.open(F("Sming/README.rst"));
+		Serial.copyFrom(&file);
+	}
+
+	Storage::Debug::listPartitions(Serial);
+
+	delete fs;
+	delete dev;
 }
+#endif
 
 bool fscopy(const char* srcFile)
 {
@@ -63,11 +81,10 @@ bool fscopy(const char* srcFile)
 
 void fsinit()
 {
-	DEFINE_FSTR(test_image, "/mnt/c/temp/2017-07-05-raspbian-jessie-lite.img")
-	auto dev = mountTestImage("TEST", test_image);
-
-	Storage::Debug::listPartitions(Serial);
-	return;
+#ifdef ARCH_HOST
+	DEFINE_FSTR(test_image, "test")
+	mountTestImage("TEST", test_image);
+#endif
 
 	DEFINE_FSTR_LOCAL(newfile_txt, "The name of this file is, perhaps, a little long.txt");
 
@@ -97,8 +114,12 @@ void fsinit()
 	m_puts("\r\n");
 
 	IFS::Debug::printFsInfo(Serial, *fs);
-
 	IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+
+#ifdef ARCH_HOST
+	fileSetFileSystem(nullptr);
+	System.restart();
+#endif
 }
 
 } // namespace
