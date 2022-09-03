@@ -306,7 +306,21 @@ int FileSystem::format()
 	mounted = false;
 
 	BYTE work_area[FF_MAX_SS];
-	MKFS_PARM opt{FM_ANY | FM_SFD};
+	MKFS_PARM opt{FM_SFD};
+	using SubType = Storage::Partition::SubType::Data;
+	switch(SubType(partition.subType())) {
+	case SubType::fat:
+		opt.fmt |= FM_FAT;
+		break;
+	case SubType::fat32:
+		opt.fmt |= FM_FAT32;
+		break;
+	case SubType::exfat:
+		opt.fmt |= FM_EXFAT;
+		break;
+	default:
+		return Error::BadPartition;
+	}
 	currentVolume = this;
 	auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
 	if(fr != FR_OK) {
