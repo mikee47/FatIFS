@@ -1,5 +1,4 @@
 #include <SmingCore.h>
-
 #include <IFS/FatFS.h>
 #include <IFS/FileCopier.h>
 #include <Data/Stream/IFS/DirectoryTemplate.h>
@@ -13,13 +12,9 @@ IMPORT_FSTR(listing_txt, PROJECT_DIR "/resource/listing.txt")
 
 bool fscopy(const char* srcFile)
 {
-	auto& hostfs = IFS::Host::getFileSystem();
-
-	auto srcfs = IFS::mountArchive(hostfs, srcFile);
-	if(srcfs == nullptr) {
-		m_printf("mount failed: %s", srcFile);
-		return false;
-	}
+	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fwfs);
+	auto srcfs = IFS::createFirmwareFilesystem(part);
+	srcfs->mount();
 
 	auto dstfs = IFS::getDefaultFileSystem();
 
@@ -88,25 +83,25 @@ void printDirectory(const String& path)
 
 void fsinit()
 {
-	int err = fatfs_mount();
-	FF_CHECK("mount", err);
-
-	bool createVolume = true;
-	bool writeFile = createVolume;
-
-	if(createVolume) {
-		debug_i("Formatting disk");
-		int err = fileSystemFormat();
-		FF_CHECK("format", err);
-
-		fscopy("fwfs1.bin");
-	}
-
 	DEFINE_FSTR_LOCAL(newfile_txt, "The name of this file is, perhaps, a little long.txt");
 
-	if(writeFile) {
+	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
+	auto fs = IFS::createFatFilesystem(part);
+
+	int err = fs->mount();
+	if(err == FS_OK) {
+		fileSetFileSystem(fs);
+	} else if(err == IFS::Error::BadFileSystem) {
+		debug_i("Formatting disk");
+		fs->format();
+		fileMountFileSystem(fs);
+		fscopy("fwfs1.bin");
+
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
 		FF_CHECK("fileSetContent", err);
+	} else {
+		debug_e("Unhandled error during mount: %s", fs->getErrorString(err).c_str());
+		return;
 	}
 
 	String s = fileGetContent(newfile_txt);

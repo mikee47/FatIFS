@@ -11,6 +11,14 @@
             "size": "1M",
             "type": "data",
             "subtype": "fat"
+        },
+        "fwfs0": {
+            "device": "spiFlash",
+            "address": "0x00190000",
+            "size": "164K",
+            "type": "data",
+            "subtype": "fwfs",
+            "filename": "resource/fwfs1.bin"
         }
     }
 }
