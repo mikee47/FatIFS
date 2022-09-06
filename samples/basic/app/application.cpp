@@ -9,8 +9,6 @@
 
 namespace
 {
-DEFINE_FSTR(test_image, "/mnt/c/temp/2017-07-05-raspbian-jessie-lite.img")
-
 #ifdef ARCH_HOST
 void mountTestImage(const String& tag, const String& filename)
 {
@@ -52,12 +50,20 @@ bool fscopy(const char* srcFile)
 
 	auto dstfs = IFS::getDefaultFileSystem();
 
+	if(dstfs == nullptr) {
+		debug_e("File system not set");
+		return false;
+	}
+
 	IFS::Profiler profiler;
 	dstfs->setProfiler(&profiler);
 	IFS::FileCopier copier(*srcfs, *dstfs);
 
-	copier.onError([](IFS::FileSystem& fileSys, int errorCode, IFS::FileCopier::Operation operation,
-					  const String& path) -> bool { return true; });
+	copier.onError(
+		[](IFS::FileSystem& fileSys, int errorCode, IFS::FileCopier::Operation operation, const String& path) -> bool {
+			Serial << operation << "('" << path << "'): " << fileSys.getErrorString(errorCode) << endl;
+			return true;
+		});
 
 	bool res = copier.copyDir(nullptr, nullptr);
 	dstfs->setProfiler(nullptr);
@@ -96,14 +102,20 @@ void fsinit()
 		fileSetFileSystem(fs);
 	} else if(err == IFS::Error::BadFileSystem) {
 		debug_i("Formatting disk");
-		fs->format();
-		fileMountFileSystem(fs);
+		err = fs->format();
+		debug_i("format: %s", fs->getErrorString(err).c_str());
+		if(!fileMountFileSystem(fs)) {
+			debug_e("Mount failed");
+			delete fs;
+			return;
+		}
 		fscopy("fwfs1.bin");
 
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
 		debug_i("fileSetContent(): %s", fileGetErrorString(err).c_str());
 	} else {
 		debug_e("Unhandled error during mount: %s", fs->getErrorString(err).c_str());
+		delete fs;
 		return;
 	}
 
@@ -115,6 +127,8 @@ void fsinit()
 
 	IFS::Debug::printFsInfo(Serial, *fs);
 	IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+
+	debug_i("*** Listing complete ***");
 
 #ifdef ARCH_HOST
 	fileSetFileSystem(nullptr);
