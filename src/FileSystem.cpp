@@ -179,7 +179,52 @@ bool FileSystem::write_sector(const void* buff, uint32_t sector, size_t count)
 	if(profiler != nullptr) {
 		profiler->write(offset, buff, size);
 	}
-	return partition.write(offset, buff, size);
+
+	auto isSectorEmpty = [&]() -> bool {
+		uint32_t buffer[SECTOR_SIZE / 4];
+		partition.read(offset, buffer, sizeof(buffer));
+		for(unsigned i = 0; i < ARRAY_SIZE(buffer); ++i) {
+			if(buffer[i] != 0xffffffffUL) {
+				return false;
+			}
+		}
+		return true;
+	};
+
+	auto blockSize = partition.getBlockSize();
+	if(blockSize <= SECTOR_SIZE || isSectorEmpty()) {
+		return partition.write(offset, buff, size);
+	}
+
+	auto blockOffset = (offset / partition.getBlockSize()) * blockSize;
+	auto sectorsPerBlock = blockSize / SECTOR_SIZE;
+	struct SectorBuffer {
+		uint8_t data[SECTOR_SIZE];
+	};
+	std::unique_ptr<SectorBuffer[]> sectorBuffer;
+	sectorBuffer.reset(new SectorBuffer[sectorsPerBlock - 1]);
+	for(unsigned i = 0, j = 0; i < sectorsPerBlock; ++i) {
+		if(i == sector % sectorsPerBlock) {
+			continue;
+		}
+		if(!partition.read(blockOffset + i * SECTOR_SIZE, sectorBuffer[j++].data, SECTOR_SIZE)) {
+			return false;
+		}
+	}
+
+	if(!partition.erase_range(blockOffset, blockSize)) {
+		return false;
+	}
+
+	bool res = true;
+	for(unsigned i = 0, j = 0; res && i < sectorsPerBlock; ++i) {
+		if(i == sector % sectorsPerBlock) {
+			res = partition.write(offset, buff, size);
+		} else {
+			res = partition.write(blockOffset + i * SECTOR_SIZE, sectorBuffer[j++].data, SECTOR_SIZE);
+		}
+	}
+	return res;
 }
 
 bool FileSystem::ioctl(uint8_t cmd, void* buff)
