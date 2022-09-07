@@ -11,3 +11,27 @@ Maintain mapping of partitions to logical drive letters so paths can be
 modified accordingly.
 
 For example, "/dir1/root.txt" will be passed to fatfs as "A:\dir1\root.txt".
+
+SD Card connections
+-------------------
+
+.. figure:: mmc.jpg
+
+   See https://en.wikipedia.org/wiki/SD_card
+
+==========  =======  ============  ============  =====  ====  =======  ======================================
+MMC pin     SD pin   miniSD pin    microSD pin   Name   I/O   Logic    Description
+==========  =======  ============  ============  =====  ====  =======  ======================================
+1           1        1             2             nCS    I     PP       SPI Card Select [CS] (Negative logic)
+2           2        2             3             DI     I     PP       SPI Serial Data In [MOSI]
+3           3        3                           VSS    S     S        Ground
+4           4        4             4             VDD    S     S        Power
+5           5        5             5             CLK    I     PP       SPI Serial Clock [SCLK]
+6           6        6             6             VSS    S     S        Ground
+7           7        7             7             DO     O     PP       SPI Serial Data Out [MISO]
+-           8        8             8             NC     -     -        Unused (memory cards)
+                                                 nIRQ   O     OD       Interrupt (SDIO cards) (negative logic)
+-           9        9             1             NC                    Unused
+-           -        10            -             NC                    Reserved
+-           -        11            -             NC                    Reserved
+==========  =======  ============  ============  =====  ====  =======  ======================================

@@ -6,6 +6,17 @@
 #include <Storage/FileDevice.h>
 #include <Storage/DiskDevice.h>
 #include <Storage/Debug.h>
+#include <Storage/Sdio.h>
+
+// Chip selects independent of SPI controller in use
+#ifdef ARCH_ESP32
+#define PIN_CARD_CS 21
+#else
+// Esp8266 cannot use GPIO15 as this affects boot mode
+#define PIN_CARD_CS 5
+#endif
+
+#define SPI_FREQ_LIMIT 2000000
 
 namespace
 {
@@ -85,6 +96,18 @@ bool fscopy(const char* srcFile)
 	return res;
 }
 
+Storage::Partition sdinit()
+{
+	auto card = new Storage::SDIO::Card(SPI);
+	Storage::registerDevice(card);
+
+	if(!card->begin(PIN_CARD_CS, SPI_FREQ_LIMIT)) {
+		return Storage::Partition{};
+	}
+
+	return card->partitions()[0];
+}
+
 void fsinit()
 {
 #ifdef ARCH_HOST
@@ -92,23 +115,25 @@ void fsinit()
 	mountTestImage("TEST", test_image);
 #endif
 
+	auto part = sdinit();
+
 	DEFINE_FSTR_LOCAL(newfile_txt, "The name of this file is, perhaps, a little long.txt");
 
-	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
+	// auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat32);
 	auto fs = IFS::createFatFilesystem(part);
 
 	int err = fs->mount();
 	if(err == FS_OK) {
 		fileSetFileSystem(fs);
-	} else if(err == IFS::Error::BadFileSystem) {
-		debug_i("Formatting disk");
-		err = fs->format();
-		debug_i("format: %s", fs->getErrorString(err).c_str());
-		if(!fileMountFileSystem(fs)) {
-			debug_e("Mount failed");
-			delete fs;
-			return;
-		}
+		// } else if(err == IFS::Error::BadFileSystem) {
+		// 	debug_i("Formatting disk");
+		// 	err = fs->format();
+		// 	debug_i("format: %s", fs->getErrorString(err).c_str());
+		// 	if(!fileMountFileSystem(fs)) {
+		// 		debug_e("Mount failed");
+		// 		delete fs;
+		// 		return;
+		// 	}
 		fscopy("fwfs1.bin");
 
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
