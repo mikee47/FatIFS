@@ -129,7 +129,7 @@ PartitionType identify(uint64_t offset, const void* sector, Device& device, cons
 		if(entry != nullptr) {
 			name = unicode_to_oem(entry->partition_name, ARRAY_SIZE(entry->partition_name));
 		}
-		dev.createPartition(name, Partition::SubType::Data::exfat, offset, std::min(volumeSize, 0xffffffffULL));
+		dev.createPartition(name, Partition::SubType::Data::exfat, offset, volumeSize);
 		debug_d("[DD] Found ExFAT @ 0x%llx", offset);
 		return PartitionType::exfat;
 	}

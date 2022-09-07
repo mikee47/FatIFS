@@ -161,25 +161,25 @@ IFS::FileAttributes getAttr(BYTE attr)
 
 bool FileSystem::read_sector(void* buff, uint32_t sector, size_t count)
 {
-	auto addr = sector * SECTOR_SIZE;
+	auto offset = uint64_t(sector) * SECTOR_SIZE;
 	auto size = count * SECTOR_SIZE;
-	if(!partition.read(addr, buff, size)) {
+	if(!partition.read(offset, buff, size)) {
 		return false;
 	}
 	if(profiler != nullptr) {
-		profiler->read(addr, buff, size);
+		profiler->read(offset, buff, size);
 	}
 	return true;
 }
 
 bool FileSystem::write_sector(const void* buff, uint32_t sector, size_t count)
 {
-	auto addr = sector * SECTOR_SIZE;
+	auto offset = uint64_t(sector) * SECTOR_SIZE;
 	auto size = count * SECTOR_SIZE;
 	if(profiler != nullptr) {
-		profiler->write(addr, buff, size);
+		profiler->write(offset, buff, size);
 	}
-	return partition.write(addr, buff, size);
+	return partition.write(offset, buff, size);
 }
 
 bool FileSystem::ioctl(uint8_t cmd, void* buff)
