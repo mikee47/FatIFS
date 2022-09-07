@@ -20,13 +20,12 @@
 #pragma once
 
 #include <IFS/Types.h>
-#include <fatfs/ff.h>
 
 namespace IFS
 {
 namespace FAT
 {
-String fatfsErrorToStr(FRESULT err);
+String fatfsErrorToStr(uint8_t err);
 
 } // namespace FAT
 } // namespace IFS

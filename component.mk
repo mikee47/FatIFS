@@ -1,4 +1,8 @@
 COMPONENT_DEPENDS := IFS
 
-COMPONENT_SRCDIRS := src src/fatfs
-COMPONENT_INCDIRS := src src/include
+COMPONENT_SRCDIRS := \
+	src
+
+COMPONENT_INCDIRS := \
+	src \
+	src/include

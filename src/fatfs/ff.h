@@ -18,13 +18,10 @@
 /
 /----------------------------------------------------------------------------*/
 
+#pragma once
 
 #ifndef FF_DEFINED
 #define FF_DEFINED	86631	/* Revision ID */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #include "ffconf.h"		/* FatFs configuration options */
 
@@ -414,10 +411,5 @@ int ff_del_syncobj (FF_SYNC_t sobj);	/* Delete a sync object */
 #define	AM_SYS	0x04	/* System */
 #define AM_DIR	0x10	/* Directory */
 #define AM_ARC	0x20	/* Archive */
-
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FF_DEFINED */

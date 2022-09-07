@@ -46,7 +46,7 @@ namespace IFS
 {
 namespace FAT
 {
-String fatfsErrorToStr(FRESULT res)
+String fatfsErrorToStr(uint8_t res)
 {
 	switch(res) {
 #define XX(tag, ...)                                                                                                   \
@@ -58,5 +58,5 @@ String fatfsErrorToStr(FRESULT res)
 		return String(res);
 	}
 }
-} // namespace FatFS
+} // namespace FAT
 } // namespace IFS

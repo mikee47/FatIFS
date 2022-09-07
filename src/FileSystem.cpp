@@ -27,72 +27,84 @@
 
 namespace
 {
-IFS::FAT::FileSystem* volumes[FATFS_MAX_VOLUMES];
+IFS::FAT::FileSystem* currentVolume;
+} // namespace
 
-/**
- * @brief Produces fully-qualified paths so drives get routed to correct FileSystem.
- */
-class FatPath
+namespace IFS
 {
-public:
-	FatPath(uint8_t driveIndex, const char* path = nullptr)
-	{
-		auto len = path ? strlen(path) : 0;
-		buffer.reset(new char[4 + len]);
-		strcpy(buffer.get(), "x:/");
-		buffer[0] = '0' + driveIndex;
-		memcpy(&buffer[3], path, len);
-		buffer[3 + len] = '\0';
-	}
+namespace FAT
+{
+#include "fatfs/ff.h"
+#include "fatfs/diskio.h"
 
-	operator const char*() const
-	{
-		return buffer.get();
-	}
-
-private:
-	CString buffer;
+struct S_FATFS : public FATFS {
 };
 
-int findVolume(IFS::FAT::FileSystem* fs)
-{
-	for(unsigned i = 0; i < FATFS_MAX_VOLUMES; ++i) {
-		if(volumes[i] == fs) {
-			return i;
-		}
-	}
+struct S_FILINFO : public FILINFO {
+};
 
-	return -1;
+/**
+ * @brief Details for an open file
+ */
+struct FileDescriptor {
+	CString name;
+	FIL fil{};
+
+	void touch()
+	{
+		// TODO
+	}
+};
+
+/**
+ * @brief Fat directory object
+ */
+struct FileDir {
+	DIR dir;
+};
+
+DWORD get_fattime(void)
+{
+#ifndef ARCH_HOST
+	if(!SystemClock.isSet()) {
+		return 0;
+	}
+#endif
+
+	DateTime dt = SystemClock.now(eTZ_UTC);
+	return FatTime(dt).value;
 }
 
-int allocateVolume(IFS::FAT::FileSystem* fs)
+DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
 {
-	for(unsigned i = 0; i < FATFS_MAX_VOLUMES; ++i) {
-		if(volumes[i] == nullptr) {
-			volumes[i] = fs;
-			return i;
-		}
-	}
-
-	return -1;
+	(void)pdrv;
+	debug_d("%s(sector=%u, count=%u)", __FUNCTION__, sector, count);
+	assert(currentVolume != nullptr);
+	return currentVolume->read_sector(buff, sector, count) ? RES_OK : RES_PARERR;
 }
 
-int deallocateVolume(IFS::FAT::FileSystem* fs)
+DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
 {
-	int pdrv = findVolume(fs);
-	if(pdrv >= 0) {
-		volumes[pdrv] = nullptr;
-	}
-	return pdrv;
+	(void)pdrv;
+	debug_d("%s(sector=%u, count=%u)", __FUNCTION__, sector, count);
+	assert(currentVolume != nullptr);
+	return currentVolume->write_sector(buff, sector, count) ? RES_OK : RES_PARERR;
 }
 
-IFS::FAT::FileSystem* getVolume(BYTE pdrv)
+DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
 {
-	auto fs = (pdrv < FATFS_MAX_VOLUMES) ? volumes[pdrv] : nullptr;
-	if(fs == nullptr) {
-		debug_e("[FAT] Bad drive %u", pdrv);
-	}
-	return fs;
+	(void)pdrv;
+	debug_d("%s(cmd=%u)", __FUNCTION__, cmd);
+	assert(currentVolume != nullptr);
+	return currentVolume->ioctl(cmd, buff) ? RES_OK : RES_PARERR;
+}
+
+#include "fatfs/ffunicode.c"
+#include "fatfs/ff.c"
+
+const char* getFatPath(const char* path)
+{
+	return IFS::isRootPath(path) ? "" : path;
 }
 
 int sysError(FRESULT res)
@@ -147,104 +159,46 @@ IFS::FileAttributes getAttr(BYTE attr)
 	return res;
 }
 
-} // namespace
-
-DWORD get_fattime(void)
-{
-#ifndef ARCH_HOST
-	if(!SystemClock.isSet()) {
-		return 0;
-	}
-#endif
-
-	DateTime dt = SystemClock.now(eTZ_UTC);
-	return FatTime(dt).value;
-}
-
-DSTATUS disk_status(BYTE pdrv)
-{
-	auto fs = getVolume(pdrv);
-	return (fs == nullptr) ? STA_NOINIT : 0;
-}
-
-DSTATUS disk_initialize(BYTE pdrv)
-{
-	auto fs = getVolume(pdrv);
-	return (fs == nullptr) ? STA_NOINIT : 0;
-}
-
-DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
-{
-	debug_d("%s(pdrv=%u, sector=%u, count=%u)", __FUNCTION__, pdrv, sector, count);
-	auto fs = getVolume(pdrv);
-	return fs ? fs->read_sector(buff, sector, count) : RES_PARERR;
-}
-
-DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
-{
-	debug_d("%s(pdrv=%u, sector=%u, count=%u)", __FUNCTION__, pdrv, sector, count);
-	auto fs = getVolume(pdrv);
-	return fs ? fs->write_sector(buff, sector, count) : RES_PARERR;
-}
-
-DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
-{
-	debug_d("%s(pdrv=%u, cmd=%u)", __FUNCTION__, pdrv, cmd);
-	auto fs = getVolume(pdrv);
-	return fs ? fs->ioctl(cmd, buff) : RES_PARERR;
-}
-
-namespace IFS
-{
-namespace FAT
-{
-/**
- * @brief Fat directory object
- */
-struct FileDir {
-	DIR dir;
-};
-
-DRESULT FileSystem::read_sector(void* buff, LBA_t sector, UINT count)
+bool FileSystem::read_sector(void* buff, uint32_t sector, size_t count)
 {
 	auto addr = sector * SECTOR_SIZE;
 	auto size = count * SECTOR_SIZE;
 	if(!partition.read(addr, buff, size)) {
-		return RES_ERROR;
+		return false;
 	}
 	if(profiler != nullptr) {
 		profiler->read(addr, buff, size);
 	}
-	return RES_OK;
+	return true;
 }
 
-DRESULT FileSystem::write_sector(const void* buff, LBA_t sector, UINT count)
+bool FileSystem::write_sector(const void* buff, uint32_t sector, size_t count)
 {
 	auto addr = sector * SECTOR_SIZE;
 	auto size = count * SECTOR_SIZE;
 	if(profiler != nullptr) {
 		profiler->write(addr, buff, size);
 	}
-	return partition.write(addr, buff, size) ? RES_OK : RES_ERROR;
+	return partition.write(addr, buff, size);
 }
 
-DRESULT FileSystem::ioctl(BYTE cmd, void* buff)
+bool FileSystem::ioctl(uint8_t cmd, void* buff)
 {
 	switch(cmd) {
 	case CTRL_SYNC:
-		return RES_OK;
+		return true;
 	case GET_SECTOR_COUNT:
 		*reinterpret_cast<DWORD*>(buff) = partition.size() / SECTOR_SIZE;
-		return RES_OK;
+		return true;
 	case GET_SECTOR_SIZE:
 		*reinterpret_cast<WORD*>(buff) = SECTOR_SIZE;
-		return RES_OK;
+		return true;
 	case GET_BLOCK_SIZE:
 		*reinterpret_cast<DWORD*>(buff) = partition.getBlockSize() / SECTOR_SIZE;
-		return RES_OK;
+		return true;
+	default:
+		return false;
 	}
-
-	return RES_ERROR;
 }
 
 /**
@@ -295,14 +249,13 @@ OpenFlags mapFileOpenFlags(OpenFlags flags, BYTE& mode)
 		return Error::FileNotOpen;                                                                                     \
 	}
 
-#define CHECK_WRITE()                                                                                                  \
-	// 	if(!fd->flags[FileDescriptor::Flag::Write]) {                                                                      \
-// 		return Error::ReadOnly;                                                                                        \
-// 	}
+FileSystem::FileSystem(Storage::Partition partition) : partition(partition)
+{
+	fatfs.reset(new S_FATFS{});
+}
 
 FileSystem::~FileSystem()
 {
-	deallocateVolume(this);
 }
 
 int FileSystem::mount()
@@ -328,23 +281,14 @@ int FileSystem::tryMount()
 {
 	assert(!mounted);
 
-	int pdrv = findVolume(this);
-	if(pdrv < 0) {
-		pdrv = allocateVolume(this);
-		if(pdrv < 0) {
-			return Error::BadVolumeIndex;
-		}
-	}
-	driveIndex = pdrv;
-
-	auto res = f_mount(&fatfs, FatPath(driveIndex), 1);
+	currentVolume = this;
+	FATFS* rfs;
+	auto res = mount_volume(nullptr, &rfs, 1);
 	if(res != FR_OK) {
 		int err = sysError(res);
-		debug_ifserr(err, "f_mount()");
+		debug_ifserr(err, "mount_volume()");
 		return err;
 	}
-
-	debug_d("Mounted, pdrv=%u", driveIndex);
 
 	// get_attr("", AttributeTag::ReadAce, rootAcl.readAccess);
 	// get_attr("", AttributeTag::WriteAce, rootAcl.writeAccess);
@@ -363,7 +307,8 @@ int FileSystem::format()
 
 	BYTE work_area[FF_MAX_SS];
 	MKFS_PARM opt{FM_ANY};
-	auto fr = f_mkfs(FatPath(driveIndex), &opt, work_area, sizeof(work_area));
+	currentVolume = this;
+	auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
 	if(fr != FR_OK) {
 		auto err = sysError(fr);
 		debug_ifserr(err, "format()");
@@ -383,7 +328,7 @@ int FileSystem::getinfo(Info& info)
 {
 	info.clear();
 	info.partition = partition;
-	switch(fatfs.fs_type) {
+	switch(fatfs->fs_type) {
 	case FS_FAT12:
 	case FS_FAT16:
 		info.type = Type::Fat;
@@ -402,16 +347,16 @@ int FileSystem::getinfo(Info& info)
 	if(mounted) {
 		info.attr |= Attribute::Mounted;
 		info.volumeSize = partition.size();
-		FatPath fatpath(driveIndex);
+		currentVolume = this;
 		DWORD nclst;
 		FATFS* fs;
-		FRESULT fr = f_getfree(fatpath, &nclst, &fs);
+		FRESULT fr = f_getfree("", &nclst, &fs);
 		if(fr == FR_OK) {
 			info.freeSpace = nclst * fs->csize * SECTOR_SIZE;
 		}
 		char label[32];
 		DWORD vsn;
-		fr = f_getlabel(fatpath, label, &vsn);
+		fr = f_getlabel("", label, &vsn);
 		if(fr == FR_OK) {
 			info.name.copy(label);
 			info.volumeID = vsn;
@@ -439,7 +384,6 @@ String FileSystem::getErrorString(int err)
 FileHandle FileSystem::open(const char* path, OpenFlags flags)
 {
 	CHECK_MOUNTED()
-	FS_CHECK_PATH(path)
 
 	BYTE mode;
 	if(mapFileOpenFlags(flags, mode).any()) {
@@ -464,7 +408,8 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 	}
 
 	auto& fd = fileDescriptors[file - FATFS_HANDLE_MIN];
-	FRESULT fr = f_open(&fd->fil, FatPath(driveIndex, path), mode);
+	currentVolume = this;
+	FRESULT fr = f_open(&fd->fil, getFatPath(path), mode);
 	if(fr != FR_OK) {
 		int err = sysError(fr);
 		debug_d("open('%s'): %s", path, getErrorString(file).c_str());
@@ -490,6 +435,7 @@ int FileSystem::close(FileHandle file)
 {
 	GET_FD()
 
+	currentVolume = this;
 	FRESULT fr = f_close(&fd->fil);
 	fd.reset();
 	return sysError(fr);
@@ -515,8 +461,8 @@ int32_t FileSystem::tell(FileHandle file)
 int FileSystem::ftruncate(FileHandle file, size_t new_size)
 {
 	GET_FD()
-	CHECK_WRITE()
 
+	currentVolume = this;
 	FRESULT fr = f_lseek(&fd->fil, new_size);
 	if(fr == FR_OK) {
 		fr = f_truncate(&fd->fil);
@@ -528,8 +474,8 @@ int FileSystem::ftruncate(FileHandle file, size_t new_size)
 int FileSystem::flush(FileHandle file)
 {
 	GET_FD()
-	CHECK_WRITE()
 
+	currentVolume = this;
 	FRESULT fr = f_sync(&fd->fil);
 	return sysError(fr);
 }
@@ -538,6 +484,7 @@ int FileSystem::read(FileHandle file, void* data, size_t size)
 {
 	GET_FD()
 
+	currentVolume = this;
 	UINT res{0};
 	FRESULT fr = f_read(&fd->fil, data, size, &res);
 	if(fr != FR_OK) {
@@ -552,8 +499,8 @@ int FileSystem::read(FileHandle file, void* data, size_t size)
 int FileSystem::write(FileHandle file, const void* data, size_t size)
 {
 	GET_FD()
-	CHECK_WRITE()
 
+	currentVolume = this;
 	UINT res{0};
 	FRESULT fr = f_write(&fd->fil, data, size, &res);
 	if(res < 0) {
@@ -583,11 +530,12 @@ int FileSystem::lseek(FileHandle file, int offset, SeekOrigin origin)
 		return Error::BadParam;
 	}
 
+	currentVolume = this;
 	FRESULT fr = f_lseek(&fd->fil, offset);
 	return (fr == FR_OK) ? offset : sysError(fr);
 }
 
-void FileSystem::fillStat(Stat& stat, FILINFO inf)
+void FileSystem::fillStat(Stat& stat, const S_FILINFO& inf)
 {
 	stat = Stat{};
 	stat.fs = this;
@@ -612,8 +560,9 @@ int FileSystem::stat(const char* path, Stat* stat)
 		return FS_OK;
 	}
 
-	FILINFO inf;
-	FRESULT fr = f_stat(FatPath(driveIndex, path), &inf);
+	S_FILINFO inf;
+	currentVolume = this;
+	FRESULT fr = f_stat(path, &inf);
 	if(fr != FR_OK) {
 		return sysError(fr);
 	}
@@ -648,9 +597,6 @@ int FileSystem::fstat(FileHandle file, Stat* stat)
 int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, size_t size)
 {
 	GET_FD()
-	CHECK_WRITE()
-
-	const uint8_t FA_MODIFIED = 0x40; /* File has been modified */
 
 	if(size != getAttributeSize(tag)) {
 		return Error::BadParam;
@@ -737,7 +683,6 @@ int FileSystem::fenumxattr(FileHandle file, AttributeEnumCallback callback, void
 int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, size_t size)
 {
 	CHECK_MOUNTED()
-	FS_CHECK_PATH(path)
 
 	if(data == nullptr) {
 		// Attribute deletion
@@ -748,6 +693,9 @@ int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, s
 		return Error::BadParam;
 	}
 
+	currentVolume = this;
+	path = getFatPath(path);
+
 	switch(tag) {
 	case AttributeTag::ModifiedTime: {
 		TimeStamp ts;
@@ -757,7 +705,7 @@ int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, s
 			.fdate = ft.date,
 			.ftime = ft.time,
 		};
-		FRESULT fr = f_utime(FatPath(driveIndex, path), &inf);
+		FRESULT fr = f_utime(path, &inf);
 		return sysError(fr);
 	}
 
@@ -771,7 +719,7 @@ int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, s
 		if(attr[FileAttribute::ReadOnly]) {
 			fattr |= AM_RDO;
 		}
-		FRESULT fr = f_chmod(FatPath(driveIndex, path), fattr, AM_ARC | AM_RDO);
+		FRESULT fr = f_chmod(path, fattr, AM_ARC | AM_RDO);
 		return sysError(fr);
 	}
 
@@ -783,10 +731,12 @@ int FileSystem::setxattr(const char* path, AttributeTag tag, const void* data, s
 int FileSystem::getxattr(const char* path, AttributeTag tag, void* buffer, size_t size)
 {
 	CHECK_MOUNTED()
-	FS_CHECK_PATH(path)
+
+	currentVolume = this;
+	path = getFatPath(path);
 
 	FILINFO inf;
-	FRESULT fr = f_stat(FatPath(driveIndex, path), &inf);
+	FRESULT fr = f_stat(path, &inf);
 	if(fr != FR_OK) {
 		return sysError(fr);
 	}
@@ -813,14 +763,14 @@ int FileSystem::getxattr(const char* path, AttributeTag tag, void* buffer, size_
 int FileSystem::opendir(const char* path, DirHandle& dir)
 {
 	CHECK_MOUNTED()
-	FS_CHECK_PATH(path)
 
 	auto d = new FileDir;
 	if(d == nullptr) {
 		return Error::NoMem;
 	}
 
-	FRESULT fr = f_opendir(&d->dir, FatPath(driveIndex, path));
+	currentVolume = this;
+	FRESULT fr = f_opendir(&d->dir, getFatPath(path));
 	if(fr != FR_OK) {
 		int err = sysError(fr);
 		delete d;
@@ -835,6 +785,7 @@ int FileSystem::rewinddir(DirHandle dir)
 {
 	GET_FILEDIR()
 
+	currentVolume = this;
 	FRESULT fr = f_readdir(&d->dir, nullptr);
 	return sysError(fr);
 }
@@ -843,7 +794,8 @@ int FileSystem::readdir(DirHandle dir, Stat& stat)
 {
 	GET_FILEDIR()
 
-	FILINFO inf;
+	currentVolume = this;
+	S_FILINFO inf;
 	FRESULT fr = f_readdir(&d->dir, &inf);
 	if(fr != FR_OK) {
 		return sysError(fr);
@@ -862,6 +814,7 @@ int FileSystem::closedir(DirHandle dir)
 {
 	GET_FILEDIR()
 
+	currentVolume = this;
 	FRESULT fr = f_closedir(&d->dir);
 	delete d;
 	return sysError(fr);
@@ -874,7 +827,8 @@ int FileSystem::mkdir(const char* path)
 		return Error::BadParam;
 	}
 
-	FRESULT fr = f_mkdir(FatPath(driveIndex, path));
+	currentVolume = this;
+	FRESULT fr = f_mkdir(path);
 	return sysError(fr);
 }
 
@@ -885,7 +839,8 @@ int FileSystem::rename(const char* oldpath, const char* newpath)
 		return Error::BadParam;
 	}
 
-	FRESULT fr = f_rename(FatPath(driveIndex, oldpath), FatPath(driveIndex, newpath));
+	currentVolume = this;
+	FRESULT fr = f_rename(getFatPath(oldpath), getFatPath(newpath));
 	return sysError(fr);
 }
 
@@ -896,7 +851,8 @@ int FileSystem::remove(const char* path)
 		return Error::BadParam;
 	}
 
-	FRESULT fr = f_unlink(FatPath(driveIndex, path));
+	currentVolume = this;
+	FRESULT fr = f_unlink(getFatPath(path));
 	return sysError(fr);
 }
 

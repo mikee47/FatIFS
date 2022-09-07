@@ -18,8 +18,6 @@
 #pragma once
 
 #include <IFS/FileSystem.h>
-#include <fatfs/ff.h>
-#include <fatfs/diskio.h>
 
 namespace IFS
 {
@@ -38,21 +36,12 @@ namespace FAT
 // Maximum file handle value
 #define FATFS_HANDLE_MAX (FATFS_HANDLE_MIN + FATFS_MAX_FDS - 1)
 
-#define FATFS_MAX_VOLUMES FF_VOLUMES
+#define FATFS_MAX_VOLUMES 4 // FF_VOLUMES
 #define FATFS_SECTOR_SIZE 512
 
-/**
- * @brief Details for an open file
- */
-struct FileDescriptor {
-	CString name;
-	FIL fil{};
-
-	void touch()
-	{
-		// TODO
-	}
-};
+struct S_FATFS;
+struct S_FILINFO;
+struct FileDescriptor;
 
 /**
  * Wraps fatfs
@@ -60,10 +49,7 @@ struct FileDescriptor {
 class FileSystem : public IFileSystem
 {
 public:
-	FileSystem(Storage::Partition partition) : partition(partition)
-	{
-	}
-
+	FileSystem(Storage::Partition partition);
 	~FileSystem();
 
 	int mount() override;
@@ -97,20 +83,24 @@ public:
 	int format() override;
 	int check() override;
 
-	DRESULT read_sector(void* buff, LBA_t sector, UINT count);
-	DRESULT write_sector(const void* buff, LBA_t sector, UINT count);
-	DRESULT ioctl(BYTE cmd, void* buff);
+	bool read_sector(void* buff, uint32_t sector, size_t count);
+	bool write_sector(const void* buff, uint32_t sector, size_t count);
+	bool ioctl(uint8_t cmd, void* buff);
+
+	S_FATFS* getFatFS() const
+	{
+		return fatfs.get();
+	}
 
 private:
 	int tryMount();
-	void fillStat(Stat& stat, FILINFO inf);
+	void fillStat(Stat& stat, const S_FILINFO& inf);
 
 	Storage::Partition partition;
 	IProfiler* profiler{nullptr};
+	std::unique_ptr<S_FATFS> fatfs;
 	std::unique_ptr<FileDescriptor> fileDescriptors[FATFS_MAX_FDS];
-	FATFS fatfs{};
 	ACL rootAcl{};
-	uint8_t driveIndex{0};
 	bool mounted{false};
 };
 
