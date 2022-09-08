@@ -3551,12 +3551,8 @@ FRESULT f_open (
 		}
 		else {	/* Open an existing file */
 			if (res == FR_OK) {					/* Is the object exsiting? */
-				if (dj.obj.attr & AM_DIR) {		/* File open against a directory */
-					res = FR_NO_FILE;
-				} else {
-					if ((mode & FA_WRITE) && (dj.obj.attr & AM_RDO)) { /* Write mode open against R/O file */
-						res = FR_DENIED;
-					}
+				if ((mode & FA_WRITE) && (dj.obj.attr & AM_RDO)) { /* Write mode open against R/O file or directory */
+					res = FR_DENIED;
 				}
 			}
 		}
@@ -3771,6 +3767,7 @@ FRESULT f_write (
 	res = validate(&fp->obj, &fs);			/* Check validity of the file object */
 	if (res != FR_OK || (res = (FRESULT)fp->err) != FR_OK) LEAVE_FF(fs, res);	/* Check validity */
 	if (!(fp->flag & FA_WRITE)) LEAVE_FF(fs, FR_DENIED);	/* Check access mode */
+	if (fp->obj.attr & AM_DIR) LEAVE_FF(fs, FR_DENIED); /* Directory write prohibited */
 
 	/* Check fptr wrap-around (file size cannot reach 4 GiB at FAT volume) */
 	if ((!FF_FS_EXFAT || fs->fs_type != FS_EXFAT) && (DWORD)(fp->fptr + btw) < (DWORD)fp->fptr) {
