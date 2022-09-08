@@ -28,6 +28,7 @@
 namespace
 {
 IFS::FAT::FileSystem* currentVolume;
+bool diskio_write;
 } // namespace
 
 namespace IFS
@@ -80,6 +81,7 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
 	(void)pdrv;
 	debug_d("%s(sector=%llu, count=%u)", __FUNCTION__, sector, count);
 	assert(currentVolume != nullptr);
+	diskio_write = false;
 	return currentVolume->read_sector(buff, sector, count) ? RES_OK : RES_PARERR;
 }
 
@@ -88,6 +90,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
 	(void)pdrv;
 	debug_d("%s(sector=%llu, count=%u)", __FUNCTION__, sector, count);
 	assert(currentVolume != nullptr);
+	diskio_write = true;
 	return currentVolume->write_sector(buff, sector, count) ? RES_OK : RES_PARERR;
 }
 
@@ -113,7 +116,7 @@ int sysError(FRESULT res)
 
 	switch(res) {
 	case FR_DISK_ERR:
-		return Error::WriteFailure;
+		return diskio_write ? Error::WriteFailure : Error::ReadFailure;
 	case FR_NOT_READY:
 		return Error::NotMounted;
 	case FR_NO_FILE:
