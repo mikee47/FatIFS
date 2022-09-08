@@ -17,7 +17,7 @@
 #define PIN_CARD_CS 5
 #endif
 
-#define SPI_FREQ_LIMIT 2000000
+#define SPI_FREQ_LIMIT 0 //2000000
 
 namespace
 {
@@ -152,10 +152,12 @@ void fsinit()
 #endif
 
 	auto part = sdinit();
+#ifdef ARCH_HOST
+	part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
+#endif
 
 	DEFINE_FSTR_LOCAL(newfile_txt, "The name of this file is, perhaps, a little long.txt");
 
-	// auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat32);
 	auto fs = IFS::createFatFilesystem(part);
 
 	int err = fs->mount();
@@ -188,16 +190,19 @@ void fsinit()
 	m_puts("\r\n");
 
 	IFS::Debug::printFsInfo(Serial, *fs);
-	String path = F("sming1/Sming/out/Host/debug/build/lwip/lwip-e92ce383a1d93c576825dc47f463e4fe/CMakeFiles/lwip.dir");
-	// IFS::Debug::listDirectory(Serial, *fs, path, IFS::Debug::Option::recurse);
+	String path;
 
-	listDirectoryAsync(fs, nullptr);
-
+#if 0
+	IFS::Debug::listDirectory(Serial, *fs, path, IFS::Debug::Option::recurse);
 	debug_i("*** Listing complete ***");
 
 #ifdef ARCH_HOST
 	fileSetFileSystem(nullptr);
 	System.restart();
+#endif
+
+#else
+	listDirectoryAsync(fs, path);
 #endif
 }
 
