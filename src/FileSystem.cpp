@@ -78,7 +78,7 @@ DWORD get_fattime(void)
 DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
 {
 	(void)pdrv;
-	debug_d("%s(sector=%u, count=%u)", __FUNCTION__, sector, count);
+	debug_d("%s(sector=%llu, count=%u)", __FUNCTION__, sector, count);
 	assert(currentVolume != nullptr);
 	return currentVolume->read_sector(buff, sector, count) ? RES_OK : RES_PARERR;
 }
@@ -86,7 +86,7 @@ DRESULT disk_read(BYTE pdrv, BYTE* buff, LBA_t sector, UINT count)
 DRESULT disk_write(BYTE pdrv, const BYTE* buff, LBA_t sector, UINT count)
 {
 	(void)pdrv;
-	debug_d("%s(sector=%u, count=%u)", __FUNCTION__, sector, count);
+	debug_d("%s(sector=%llu, count=%u)", __FUNCTION__, sector, count);
 	assert(currentVolume != nullptr);
 	return currentVolume->write_sector(buff, sector, count) ? RES_OK : RES_PARERR;
 }
@@ -465,14 +465,14 @@ int FileSystem::eof(FileHandle file)
 	return (pos >= size) ? 1 : 0;
 }
 
-int32_t FileSystem::tell(FileHandle file)
+int64_t FileSystem::tell(FileHandle file)
 {
 	GET_FD()
 
 	return fd->fil.fptr;
 }
 
-int FileSystem::ftruncate(FileHandle file, size_t new_size)
+int FileSystem::ftruncate(FileHandle file, uint64_t new_size)
 {
 	GET_FD()
 
@@ -527,7 +527,7 @@ int FileSystem::write(FileHandle file, const void* data, size_t size)
 	return res;
 }
 
-int FileSystem::lseek(FileHandle file, int offset, SeekOrigin origin)
+int64_t FileSystem::lseek(FileHandle file, int64_t offset, SeekOrigin origin)
 {
 	GET_FD()
 

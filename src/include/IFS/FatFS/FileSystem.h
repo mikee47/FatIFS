@@ -72,10 +72,10 @@ public:
 	int close(FileHandle file) override;
 	int read(FileHandle file, void* data, size_t size) override;
 	int write(FileHandle file, const void* data, size_t size) override;
-	int lseek(FileHandle file, int offset, SeekOrigin origin) override;
+	int64_t lseek(FileHandle file, int64_t offset, SeekOrigin origin) override;
 	int eof(FileHandle file) override;
-	int32_t tell(FileHandle file) override;
-	int ftruncate(FileHandle file, size_t new_size) override;
+	int64_t tell(FileHandle file) override;
+	int ftruncate(FileHandle file, uint64_t new_size) override;
 	int flush(FileHandle file) override;
 	int rename(const char* oldpath, const char* newpath) override;
 	int remove(const char* path) override;
