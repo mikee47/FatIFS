@@ -7,6 +7,7 @@
 #include <Storage/DiskDevice.h>
 #include <Storage/Debug.h>
 #include <Storage/Sdio.h>
+#include <IFS/Enumerator.h>
 
 // Chip selects independent of SPI controller in use
 #ifdef ARCH_ESP32
@@ -20,6 +21,38 @@
 
 namespace
 {
+void enumCallback(void* param)
+{
+	auto e = static_cast<IFS::Debug::Enumerator*>(param);
+	if(e->next()) {
+		System.queueCallback(enumCallback, e);
+	} else {
+		Serial.println("*** DONE ***");
+		delete e;
+	}
+}
+
+void listDirectoryAsync(IFS::FileSystem* fs, const String& path)
+{
+	auto e = new IFS::Debug::Enumerator(fs, path);
+	e->onStat([](const String& path, const IFS::Stat& stat) {
+		String s = path + '/' + stat.name;
+		constexpr size_t maxWidth{80};
+		if(s.length() >= maxWidth) {
+			Serial.println(s);
+			Serial.print(String().pad(maxWidth));
+		} else {
+			Serial.print(s.pad(maxWidth));
+		}
+		Serial << String(stat.size, DEC, 8) << ' ' << IFS::Debug::timeToStr(stat.mtime) << ' '
+			   << getFileAttributeString(stat.attr) << endl;
+
+		// IFS::Debug::printFileInfo(Serial, stat);
+	});
+
+	enumCallback(e);
+}
+
 #ifdef ARCH_HOST
 void mountTestImage(const String& tag, const String& filename)
 {
@@ -39,7 +72,10 @@ void mountTestImage(const String& tag, const String& filename)
 	debug_i("mount: %s", fs->getErrorString(err).c_str());
 	if(err == FS_OK) {
 		IFS::Debug::printFsInfo(Serial, *fs);
-		IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+		// IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+
+		listDirectoryAsync(fs, nullptr);
+		return;
 
 		FileStream file(fs);
 		file.open(F("Sming/README.rst"));
@@ -134,7 +170,8 @@ void fsinit()
 		// 		delete fs;
 		// 		return;
 		// 	}
-		fscopy("fwfs1.bin");
+
+		// fscopy("fwfs1.bin");
 
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
 		debug_i("fileSetContent(): %s", fileGetErrorString(err).c_str());
@@ -151,7 +188,10 @@ void fsinit()
 	m_puts("\r\n");
 
 	IFS::Debug::printFsInfo(Serial, *fs);
-	IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+	String path = F("sming1/Sming/out/Host/debug/build/lwip/lwip-e92ce383a1d93c576825dc47f463e4fe/CMakeFiles/lwip.dir");
+	// IFS::Debug::listDirectory(Serial, *fs, path, IFS::Debug::Option::recurse);
+
+	listDirectoryAsync(fs, nullptr);
 
 	debug_i("*** Listing complete ***");
 
