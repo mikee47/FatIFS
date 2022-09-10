@@ -257,43 +257,38 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 								uint8_t* buf		/* Working buffer for a sector */
 )
 {
-	unsigned cy;
-	LBA_t sz_drv;
-	uint32_t sz_part32;
-	uint8_t hd, sc;
-
 	/* Get physical drive size */
-	if(disk_ioctl(drv, GET_SECTOR_COUNT, &sz_drv) != RES_OK)
+	LBA_t driveSectors;
+	if(disk_ioctl(drv, GET_SECTOR_COUNT, &driveSectors) != RES_OK) {
 		return FR_DISK_ERR;
+	}
 
 #if FF_LBA64
-	if(sz_drv >= FF_MIN_GPT) { /* Create partitions in GPT format */
-		uint16_t ss;
-		unsigned ofs;
-
+	if(driveSectors >= FF_MIN_GPT) {
+		// Create partitions in GPT format
+		uint16_t sectorSize;
 #if FF_MAX_SS != FF_MIN_SS
-		if(disk_ioctl(drv, GET_SECTOR_SIZE, &ss) != RES_OK) {
+		if(disk_ioctl(drv, GET_SECTOR_SIZE, &sectorSize) != RES_OK) {
 			return FR_DISK_ERR; /* Get sector size */
 		}
-		if(ss > FF_MAX_SS || ss < FF_MIN_SS || (ss & (ss - 1))) {
+		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize & (sectorSize - 1))) {
 			return FR_DISK_ERR;
 		}
 #else
-		ss = FF_MAX_SS;
+		sectorSize = FF_MAX_SS;
 #endif
-		uint32_t rnd = (uint32_t)sz_drv + GET_FATTIME(); /* Random seed */
-		uint32_t align = GPT_ALIGN / ss;				 /* Partition alignment for GPT [sector] */
-		unsigned sz_ptbl = GPT_ITEMS * SZ_GPTE / ss;	 /* Size of partition table [sector] */
-		uint64_t top_bpt = sz_drv - sz_ptbl - 1;		 /* Backup partiiton table start sector */
-		uint64_t nxt_alloc = 2 + sz_ptbl;				 /* First allocatable sector */
-		uint64_t sz_pool = top_bpt - nxt_alloc;			 /* Size of allocatable area */
+		uint32_t align = GPT_ALIGN / sectorSize;			   /* Partition alignment for GPT [sector] */
+		unsigned ptSectors = GPT_ITEMS * SZ_GPTE / sectorSize; /* Size of partition table [sector] */
+		uint64_t top_bpt = driveSectors - ptSectors - 1;	   /* Backup partiiton table start sector */
+		uint64_t nxt_alloc = 2 + ptSectors;					   /* First allocatable sector */
+		uint64_t sz_pool = top_bpt - nxt_alloc;				   /* Size of allocatable area */
 		uint32_t bcc = 0;
 		uint64_t sz_part = 1;
-		unsigned pi = 0; // partition table index
-		unsigned si = 0; // size table index */
+		unsigned ptIndex = 0; // partition table index
+		unsigned si = 0;	  // size table index */
 		do {
-			if(pi * SZ_GPTE % ss == 0) {
-				memset(buf, 0, ss); /* Clean the buffer if needed */
+			if(ptIndex * SZ_GPTE % sectorSize == 0) {
+				memset(buf, 0, sectorSize); /* Clean the buffer if needed */
 			}
 			// Is the size table not termintated?
 			if(sz_part != 0) {
@@ -314,7 +309,7 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 
 			// Add a partition?
 			if(sz_part != 0) {
-				ofs = pi * SZ_GPTE % ss;
+				unsigned ofs = ptIndex * SZ_GPTE % sectorSize;
 				auto entry = reinterpret_cast<gpt_entry*>(&buf[ofs]);
 				entry->partition_type_guid = PARTITION_BASIC_DATA_GUID;
 				os_get_random(&entry->unique_partition_guid, sizeof(efi_guid_t));
@@ -324,18 +319,18 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 			}
 
 			// Write the buffer if it is filled up
-			if((pi + 1) * SZ_GPTE % ss == 0) {
+			if((ptIndex + 1) * SZ_GPTE % sectorSize == 0) {
 				bcc = crc32(bcc, buf, sectorSize);
 				// Write to primary table
-				if(disk_write(drv, buf, 2 + pi * SZ_GPTE / ss, 1) != RES_OK) {
+				if(disk_write(drv, buf, 2 + ptIndex * SZ_GPTE / sectorSize, 1) != RES_OK) {
 					return FR_DISK_ERR;
 				}
 				// Write to secondary table
-				if(disk_write(drv, buf, top_bpt + pi * SZ_GPTE / ss, 1) != RES_OK) {
+				if(disk_write(drv, buf, top_bpt + ptIndex * SZ_GPTE / sectorSize, 1) != RES_OK) {
 					return FR_DISK_ERR;
 				}
 			}
-		} while(++pi < GPT_ITEMS);
+		} while(++ptIndex < GPT_ITEMS);
 
 		/* Create primary GPT header */
 		auto& header = *reinterpret_cast<gpt_header*>(buf);
@@ -344,8 +339,8 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 			.revision = GPT_HEADER_REVISION_V1,
 			.header_size = sizeof(gpt_header),
 			.my_lba = 1,
-			.alternate_lba == sz_drv - 1,
-			.first_usable_lba = 2 + sz_ptbl,
+			.alternate_lba == driveSectors - 1,
+			.first_usable_lba = 2 + ptSectors,
 			.last_usable_lba = top_bpt - 1,
 			.partition_entry_lba = 2,
 			.num_partition_entries = GPT_ITEMS,
@@ -365,7 +360,7 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 		header.header_crc32 = 0;
 		header.header_crc32 = crc32(&header, sizeof(header));
 
-		if(disk_write(drv, buf, sz_drv - 1, 1) != RES_OK) {
+		if(disk_write(drv, buf, driveSectors - 1, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 
@@ -393,7 +388,7 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 	} else
 #endif
 	{ /* Create partitions in MBR format */
-		uint32_t sz_drv32 = sz_drv;
+		uint32_t sz_drv32 = driveSectors;
 		// Determine drive CHS without any consideration of the drive geometry
 		uint8_t n_sc = N_SEC_TRACK;
 		uint8_t n_hd;
@@ -460,7 +455,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 	static const uint16_t cst32[] = {1, 2, 4, 8, 16, 32, 0};   /* Cluster size boundary for FAT32 volume (128Ks unit) */
 	static const MKFS_PARM defopt = {FM_ANY, 0, 0, 0, 0};	  /* Default parameter */
 	uint8_t fsopt, fsty, sys, *buf, *pte, pdrv, ipart;
-	uint16_t ss; /* Sector size */
+	uint16_t sectorSize; /* Sector size */
 	uint32_t sz_buf, sz_blk, n_clst, pau, nsect, n, vsn;
 	LBA_t sz_vol, b_vol, b_fat, b_data; /* Size of volume, Base LBA of volume, fat, data */
 	LBA_t sect, lba[2];
@@ -475,35 +470,36 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 	if(!opt)
 		opt = &defopt; /* Use default parameter if it is not given */
 
-	/* Get physical drive status (sz_drv, sz_blk, ss) */
+	/* Get physical drive status (driveSectors, sz_blk, sectorSize) */
 	sz_blk = opt->align;
 	if(sz_blk == 0 && disk_ioctl(pdrv, GET_BLOCK_SIZE, &sz_blk) != RES_OK)
 		sz_blk = 1;
 	if(sz_blk == 0 || sz_blk > 0x8000 || (sz_blk & (sz_blk - 1)))
 		sz_blk = 1;
 #if FF_MAX_SS != FF_MIN_SS
-	if(disk_ioctl(pdrv, GET_SECTOR_SIZE, &ss) != RES_OK)
+	if(disk_ioctl(pdrv, GET_SECTOR_SIZE, &sectorSize) != RES_OK)
 		return FR_DISK_ERR;
-	if(ss > FF_MAX_SS || ss < FF_MIN_SS || (ss & (ss - 1)))
+	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize & (sectorSize - 1)))
 		return FR_DISK_ERR;
 #else
-	ss = FF_MAX_SS;
+	sectorSize = FF_MAX_SS;
 #endif
 	/* Options for FAT sub-type and FAT parameters */
 	fsopt = opt->fmt & (FM_ANY | FM_SFD);
 	n_fat = (opt->n_fat >= 1 && opt->n_fat <= 2) ? opt->n_fat : 1;
-	n_root = (opt->n_root >= 1 && opt->n_root <= 32768 && (opt->n_root % (ss / SZDIRE)) == 0) ? opt->n_root : 512;
+	n_root =
+		(opt->n_root >= 1 && opt->n_root <= 32768 && (opt->n_root % (sectorSize / SZDIRE)) == 0) ? opt->n_root : 512;
 	sz_au = (opt->au_size <= 0x1000000 && (opt->au_size & (opt->au_size - 1)) == 0) ? opt->au_size : 0;
-	sz_au /= ss; /* Byte --> Sector */
+	sz_au /= sectorSize; /* Byte --> Sector */
 
 	/* Get working buffer */
-	sz_buf = len / ss; /* Size of working buffer [sector] */
+	sz_buf = len / sectorSize; /* Size of working buffer [sector] */
 	if(sz_buf == 0)
 		return FR_NOT_ENOUGH_CORE;
 	buf = (uint8_t*)work; /* Working buffer */
 #if FF_USE_LFN == 3
 	if(!buf)
-		buf = ff_memalloc(sz_buf * ss); /* Use heap memory for working buffer */
+		buf = ff_memalloc(sz_buf * sectorSize); /* Use heap memory for working buffer */
 #endif
 	if(!buf)
 		return FR_NOT_ENOUGH_CORE;
@@ -538,7 +534,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 					break;
 				}
 				n_ent--;
-				ofs = (ofs + SZ_GPTE) % ss; /* Next entry */
+				ofs = (ofs + SZ_GPTE) % sectorSize; /* Next entry */
 			}
 			if(n_ent == 0)
 				LEAVE_MKFS(FR_MKFS_ABORTED); /* Partition not found */
@@ -560,8 +556,8 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 #if FF_LBA64
 			if(sz_vol >= FF_MIN_GPT) { /* Which partition type to create, MBR or GPT? */
 				fsopt |= 0x80;		   /* Partitioning is in GPT */
-				b_vol = GPT_ALIGN / ss;
-				sz_vol -= b_vol + GPT_ITEMS * SZ_GPTE / ss + 1; /* Estimated partition offset and size */
+				b_vol = GPT_ALIGN / sectorSize;
+				sz_vol -= b_vol + GPT_ITEMS * SZ_GPTE / sectorSize + 1; /* Estimated partition offset and size */
 			} else
 #endif
 			{ /* Partitioning is in MBR */
@@ -627,8 +623,8 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 				sz_au = 8;
 			}
 		}
-		b_fat = b_vol + 32;											   /* FAT start at offset 32 */
-		sz_fat = (uint32_t)((sz_vol / sz_au + 2) * 4 + ss - 1) / ss;   /* Number of FAT sectors */
+		b_fat = b_vol + 32;															 /* FAT start at offset 32 */
+		sz_fat = (uint32_t)((sz_vol / sz_au + 2) * 4 + sectorSize - 1) / sectorSize; /* Number of FAT sectors */
 		b_data = (b_fat + sz_fat + sz_blk - 1) & ~((LBA_t)sz_blk - 1); /* Align data area to the erase block boundary */
 		if(b_data - b_vol >= sz_vol / 2)
 			LEAVE_MKFS(FR_MKFS_ABORTED);						/* Too small volume? */
@@ -638,8 +634,8 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		if(n_clst > MAX_EXFAT)
 			LEAVE_MKFS(FR_MKFS_ABORTED); /* Too many clusters? */
 
-		szb_bit = (n_clst + 7) / 8;							 /* Size of allocation bitmap */
-		clen[0] = (szb_bit + sz_au * ss - 1) / (sz_au * ss); /* Number of allocation bitmap clusters */
+		szb_bit = (n_clst + 7) / 8;											 /* Size of allocation bitmap */
+		clen[0] = (szb_bit + sz_au * sectorSize - 1) / (sz_au * sectorSize); /* Number of allocation bitmap clusters */
 
 		/* Create a compressed up-case table */
 		sect = b_data + sz_au * clen[0]; /* Table start sector */
@@ -681,24 +677,24 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 			sum = xsum32(buf[i + 1] = (uint8_t)(ch >> 8), sum);
 			i += 2;
 			szb_case += 2;
-			if(si == 0 || i == sz_buf * ss) { /* Write buffered data when buffer full or end of process */
-				n = (i + ss - 1) / ss;
+			if(si == 0 || i == sz_buf * sectorSize) { /* Write buffered data when buffer full or end of process */
+				n = (i + sectorSize - 1) / sectorSize;
 				if(disk_write(pdrv, buf, sect, n) != RES_OK)
 					LEAVE_MKFS(FR_DISK_ERR);
 				sect += n;
 				i = 0;
 			}
 		} while(si);
-		clen[1] = (szb_case + sz_au * ss - 1) / (sz_au * ss); /* Number of up-case table clusters */
-		clen[2] = 1;										  /* Number of root dir clusters */
+		clen[1] = (szb_case + sz_au * sectorSize - 1) / (sz_au * sectorSize); /* Number of up-case table clusters */
+		clen[2] = 1;														  /* Number of root dir clusters */
 
 		/* Initialize the allocation bitmap */
 		sect = b_data;
-		nsect = (szb_bit + ss - 1) / ss;	/* Start of bitmap and number of bitmap sectors */
+		nsect = (szb_bit + sectorSize - 1) / sectorSize; /* Start of bitmap and number of bitmap sectors */
 		nbit = clen[0] + clen[1] + clen[2]; /* Number of clusters in-use by system (bitmap, up-case and root-dir) */
 		do {
-			memset(buf, 0, sz_buf * ss); /* Initialize bitmap buffer */
-			for(i = 0; nbit != 0 && i / 8 < sz_buf * ss; buf[i / 8] |= 1 << (i % 8), i++, nbit--)
+			memset(buf, 0, sz_buf * sectorSize); /* Initialize bitmap buffer */
+			for(i = 0; nbit != 0 && i / 8 < sz_buf * sectorSize; buf[i / 8] |= 1 << (i % 8), i++, nbit--)
 				;								   /* Mark used clusters */
 			n = (nsect > sz_buf) ? sz_buf : nsect; /* Write the buffered data */
 			if(disk_write(pdrv, buf, sect, n) != RES_OK)
@@ -712,7 +708,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		nsect = sz_fat; /* Start of FAT and number of FAT sectors */
 		j = nbit = clu = 0;
 		do {
-			memset(buf, 0, sz_buf * ss);
+			memset(buf, 0, sz_buf * sectorSize);
 			i = 0;		   /* Clear work area and reset write offset */
 			if(clu == 0) { /* Initialize FAT [0] and FAT[1] */
 				st_dword(buf + i, 0xFFFFFFF8);
@@ -722,8 +718,8 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 				i += 4;
 				clu++;
 			}
-			do {									  /* Create chains of bitmap, up-case and root dir */
-				while(nbit != 0 && i < sz_buf * ss) { /* Create a chain */
+			do {											  /* Create chains of bitmap, up-case and root dir */
+				while(nbit != 0 && i < sz_buf * sectorSize) { /* Create a chain */
 					st_dword(buf + i, (nbit > 1) ? clu + 1 : 0xFFFFFFFF);
 					i += 4;
 					clu++;
@@ -731,7 +727,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 				}
 				if(nbit == 0 && j < 3)
 					nbit = clen[j++]; /* Get next chain length */
-			} while(nbit != 0 && i < sz_buf * ss);
+			} while(nbit != 0 && i < sz_buf * sectorSize);
 			n = (nsect > sz_buf) ? sz_buf : nsect; /* Write the buffered data */
 			if(disk_write(pdrv, buf, sect, n) != RES_OK)
 				LEAVE_MKFS(FR_DISK_ERR);
@@ -740,7 +736,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		} while(nsect);
 
 		/* Initialize the root directory */
-		memset(buf, 0, sz_buf * ss);
+		memset(buf, 0, sz_buf * sectorSize);
 		buf[SZDIRE * 0 + 0] = ET_VLABEL;			  /* Volume label entry (no label) */
 		buf[SZDIRE * 1 + 0] = ET_BITMAP;			  /* Bitmap entry */
 		st_dword(buf + SZDIRE * 1 + 20, 2);			  /*  cluster */
@@ -755,7 +751,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 			n = (nsect > sz_buf) ? sz_buf : nsect;
 			if(disk_write(pdrv, buf, sect, n) != RES_OK)
 				LEAVE_MKFS(FR_DISK_ERR);
-			memset(buf, 0, ss); /* Rest of entries are filled with zero */
+			memset(buf, 0, sectorSize); /* Rest of entries are filled with zero */
 			sect += n;
 			nsect -= n;
 		} while(nsect);
@@ -764,7 +760,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		sect = b_vol;
 		for(n = 0; n < 2; n++) {
 			/* Main record (+0) */
-			memset(buf, 0, ss);
+			memset(buf, 0, sectorSize);
 			memcpy(buf + BS_JmpBoot,
 				   "\xEB\x76\x90"
 				   "EXFAT   ",
@@ -778,39 +774,39 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 			st_dword(buf + BPB_RootClusEx, 2 + clen[0] + clen[1]);	 /* Root dir cluster # */
 			st_dword(buf + BPB_VolIDEx, vsn);						   /* VSN */
 			st_word(buf + BPB_FSVerEx, 0x100);						   /* Filesystem version (1.00) */
-			for(buf[BPB_BytsPerSecEx] = 0, i = ss; i >>= 1; buf[BPB_BytsPerSecEx]++)
+			for(buf[BPB_BytsPerSecEx] = 0, i = sectorSize; i >>= 1; buf[BPB_BytsPerSecEx]++)
 				; /* Log2 of sector size [byte] */
 			for(buf[BPB_SecPerClusEx] = 0, i = sz_au; i >>= 1; buf[BPB_SecPerClusEx]++)
-				;								  /* Log2 of cluster size [sector] */
-			buf[BPB_NumFATsEx] = 1;				  /* Number of FATs */
-			buf[BPB_DrvNumEx] = 0x80;			  /* Drive number (for int13) */
-			st_word(buf + BS_BootCodeEx, 0xFEEB); /* Boot code (x86) */
-			st_word(buf + BS_55AA, 0xAA55);		  /* Signature (placed here regardless of sector size) */
-			for(i = sum = 0; i < ss; i++) {		  /* VBR checksum */
+				;									/* Log2 of cluster size [sector] */
+			buf[BPB_NumFATsEx] = 1;					/* Number of FATs */
+			buf[BPB_DrvNumEx] = 0x80;				/* Drive number (for int13) */
+			st_word(buf + BS_BootCodeEx, 0xFEEB);   /* Boot code (x86) */
+			st_word(buf + BS_55AA, 0xAA55);			/* Signature (placed here regardless of sector size) */
+			for(i = sum = 0; i < sectorSize; i++) { /* VBR checksum */
 				if(i != BPB_VolFlagEx && i != BPB_VolFlagEx + 1 && i != BPB_PercInUseEx)
 					sum = xsum32(buf[i], sum);
 			}
 			if(disk_write(pdrv, buf, sect++, 1) != RES_OK)
 				LEAVE_MKFS(FR_DISK_ERR);
 			/* Extended bootstrap record (+1..+8) */
-			memset(buf, 0, ss);
-			st_word(buf + ss - 2, 0xAA55); /* Signature (placed at end of sector) */
+			memset(buf, 0, sectorSize);
+			st_word(buf + sectorSize - 2, 0xAA55); /* Signature (placed at end of sector) */
 			for(j = 1; j < 9; j++) {
-				for(i = 0; i < ss; sum = xsum32(buf[i++], sum))
+				for(i = 0; i < sectorSize; sum = xsum32(buf[i++], sum))
 					; /* VBR checksum */
 				if(disk_write(pdrv, buf, sect++, 1) != RES_OK)
 					LEAVE_MKFS(FR_DISK_ERR);
 			}
 			/* OEM/Reserved record (+9..+10) */
-			memset(buf, 0, ss);
+			memset(buf, 0, sectorSize);
 			for(; j < 11; j++) {
-				for(i = 0; i < ss; sum = xsum32(buf[i++], sum))
+				for(i = 0; i < sectorSize; sum = xsum32(buf[i++], sum))
 					; /* VBR checksum */
 				if(disk_write(pdrv, buf, sect++, 1) != RES_OK)
 					LEAVE_MKFS(FR_DISK_ERR);
 			}
 			/* Sum record (+11) */
-			for(i = 0; i < ss; i += 4)
+			for(i = 0; i < sectorSize; i += 4)
 				st_dword(buf + i, sum); /* Fill with checksum value */
 			if(disk_write(pdrv, buf, sect++, 1) != RES_OK)
 				LEAVE_MKFS(FR_DISK_ERR);
@@ -828,10 +824,10 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 					for(i = 0, pau = 1; cst32[i] && cst32[i] <= n; i++, pau <<= 1)
 						; /* Get from table */
 				}
-				n_clst = (uint32_t)sz_vol / pau;		 /* Number of clusters */
-				sz_fat = (n_clst * 4 + 8 + ss - 1) / ss; /* FAT size [sector] */
-				sz_rsv = 32;							 /* Number of reserved sectors */
-				sz_dir = 0;								 /* No static directory */
+				n_clst = (uint32_t)sz_vol / pau;						 /* Number of clusters */
+				sz_fat = (n_clst * 4 + 8 + sectorSize - 1) / sectorSize; /* FAT size [sector] */
+				sz_rsv = 32;											 /* Number of reserved sectors */
+				sz_dir = 0;												 /* No static directory */
 				if(n_clst <= MAX_FAT16 || n_clst > MAX_FAT32)
 					LEAVE_MKFS(FR_MKFS_ABORTED);
 			} else {							   /* FAT volume */
@@ -847,9 +843,9 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 					fsty = FS_FAT12;
 					n = (n_clst * 3 + 1) / 2 + 3; /* FAT size [byte] */
 				}
-				sz_fat = (n + ss - 1) / ss;				 /* FAT size [sector] */
-				sz_rsv = 1;								 /* Number of reserved sectors */
-				sz_dir = (uint32_t)n_root * SZDIRE / ss; /* Root dir size [sector] */
+				sz_fat = (n + sectorSize - 1) / sectorSize;		 /* FAT size [sector] */
+				sz_rsv = 1;										 /* Number of reserved sectors */
+				sz_dir = (uint32_t)n_root * SZDIRE / sectorSize; /* Root dir size [sector] */
 			}
 			b_fat = b_vol + sz_rsv;					  /* FAT base */
 			b_data = b_fat + sz_fat * n_fat + sz_dir; /* Data base */
@@ -913,12 +909,12 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		disk_ioctl(pdrv, CTRL_TRIM, lba);
 #endif
 		/* Create FAT VBR */
-		memset(buf, 0, ss);
+		memset(buf, 0, sectorSize);
 		memcpy(buf + BS_JmpBoot,
 			   "\xEB\xFE\x90"
 			   "MSDOS5.0",
 			   11);										 /* Boot jump code (x86), OEM name */
-		st_word(buf + BPB_BytsPerSec, ss);				 /* Sector size [byte] */
+		st_word(buf + BPB_BytsPerSec, sectorSize);		 /* Sector size [byte] */
 		buf[BPB_SecPerClus] = (uint8_t)pau;				 /* Cluster size [sector] */
 		st_word(buf + BPB_RsvdSecCnt, (uint16_t)sz_rsv); /* Size of reserved area */
 		buf[BPB_NumFATs] = (uint8_t)n_fat;				 /* Number of FATs */
@@ -962,7 +958,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		/* Create FSINFO record if needed */
 		if(fsty == FS_FAT32) {
 			disk_write(pdrv, buf, b_vol + 6, 1); /* Write backup VBR (VBR + 6) */
-			memset(buf, 0, ss);
+			memset(buf, 0, sectorSize);
 			st_dword(buf + FSI_LeadSig, 0x41615252);
 			st_dword(buf + FSI_StrucSig, 0x61417272);
 			st_dword(buf + FSI_Free_Count, n_clst - 1); /* Number of free clusters */
@@ -973,7 +969,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 		}
 
 		/* Initialize FAT area */
-		memset(buf, 0, sz_buf * ss);
+		memset(buf, 0, sz_buf * sectorSize);
 		sect = b_fat;				 /* FAT start sector */
 		for(i = 0; i < n_fat; i++) { /* Initialize FATs each */
 			if(fsty == FS_FAT32) {
@@ -988,7 +984,7 @@ FRESULT f_mkfs(const TCHAR* path,	/* Logical drive number */
 				n = (nsect > sz_buf) ? sz_buf : nsect;
 				if(disk_write(pdrv, buf, sect, (unsigned)n) != RES_OK)
 					LEAVE_MKFS(FR_DISK_ERR);
-				memset(buf, 0, ss); /* Rest of FAT all are cleared */
+				memset(buf, 0, sectorSize); /* Rest of FAT all are cleared */
 				sect += n;
 				nsect -= n;
 			} while(nsect);
