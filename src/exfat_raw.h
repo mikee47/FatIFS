@@ -91,7 +91,7 @@ struct __attribute__((packed)) boot_sector {
 	uint32_t clu_count;
 	uint32_t root_cluster;
 	uint32_t vol_serial;
-	uint8_t fs_revision[2];
+	uint16_t fs_revision;
 	uint16_t vol_flags;
 	uint8_t sect_size_bits;
 	uint8_t sect_per_clus_bits;
@@ -159,6 +159,8 @@ struct __attribute__((packed)) exfat_dentry {
 		} upcase;
 	};
 };
+
+static_assert(sizeof(exfat_dentry) == 32, "Bad exfat_dentry");
 
 #define EXFAT_TZ_VALID (1 << 7)
 
