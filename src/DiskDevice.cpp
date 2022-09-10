@@ -42,14 +42,19 @@ uint32_t crc32_byte(uint32_t crc, uint8_t d)
 	return crc;
 }
 
-uint32_t crc32(const void* data, size_t length)
+uint32_t crc32(uint32_t bcc, const void* data, size_t length)
 {
+	bcc = ~bcc;
 	auto ptr = static_cast<const uint8_t*>(data);
-	uint32_t bcc = 0xFFFFFFFF;
 	while(length-- != 0) {
 		bcc = crc32_byte(bcc, *ptr++);
 	}
 	return ~bcc;
+}
+
+uint32_t crc32(const void* data, size_t length)
+{
+	return crc32(0, data, length);
 }
 
 bool verifyGptHeader(gpt_header& gpt)
@@ -282,7 +287,7 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 		uint64_t top_bpt = sz_drv - sz_ptbl - 1;		 /* Backup partiiton table start sector */
 		uint64_t nxt_alloc = 2 + sz_ptbl;				 /* First allocatable sector */
 		uint64_t sz_pool = top_bpt - nxt_alloc;			 /* Size of allocatable area */
-		uint32_t bcc = 0xffffffff;
+		uint32_t bcc = 0;
 		uint64_t sz_part = 1;
 		unsigned pi = 0; // partition table index
 		unsigned si = 0; // size table index */
@@ -320,7 +325,7 @@ static FRESULT create_partition(uint8_t drv,		/* Physical drive number */
 
 			// Write the buffer if it is filled up
 			if((pi + 1) * SZ_GPTE % ss == 0) {
-				bcc = crc32(buf, ss);
+				bcc = crc32(bcc, buf, sectorSize);
 				// Write to primary table
 				if(disk_write(drv, buf, 2 + pi * SZ_GPTE / ss, 1) != RES_OK) {
 					return FR_DISK_ERR;
