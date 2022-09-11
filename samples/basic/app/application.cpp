@@ -66,7 +66,7 @@ void mountTestImage(const String& tag, const String& filename)
 	Storage::registerDevice(dev);
 	Storage::scanDiskPartitions(*dev);
 
-	auto part = dev->partitions()[0];
+	auto part = *dev->partitions().begin();
 	auto fs = IFS::createFatFilesystem(part);
 	int err = fs->mount();
 	debug_i("mount: %s", fs->getErrorString(err).c_str());
@@ -141,7 +141,7 @@ Storage::Partition sdinit()
 		return Storage::Partition{};
 	}
 
-	return card->partitions()[0];
+	return *card->partitions().begin();
 }
 
 void fsinit()
