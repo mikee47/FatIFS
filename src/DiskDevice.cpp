@@ -128,7 +128,7 @@ FRESULT create_partition(Device& device,
 
 		/* Create primary GPT header */
 		auto& header = workBuffer.as<gpt_header>();
-		header = {
+		header = gpt_header{
 			.signature = GPT_HEADER_SIGNATURE,
 			.revision = GPT_HEADER_REVISION_V1,
 			.header_size = sizeof(gpt_header),
@@ -158,7 +158,7 @@ FRESULT create_partition(Device& device,
 
 		/* Create protective MBR */
 		auto& mbr = workBuffer.as<legacy_mbr>();
-		mbr = {
+		mbr = legacy_mbr{
 			.partition_record = {{
 				.boot_indicator = 0,
 				.start_head = 0,
@@ -437,7 +437,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 		/* Main record (+0) */
 		workBuffer.clear();
 		auto& bpb = workBuffer.as<EXFAT::boot_sector>();
-		bpb = {
+		bpb = EXFAT::boot_sector{
 			.jmp_boot = {0xEB, 0x76, 0x90},
 			.fs_type = FSTYPE_EXFAT,
 			.partition_offset = b_vol,				// Volume offset in the physical drive [sector]
@@ -640,7 +640,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 	/* Create FAT VBR */
 	workBuffer.clear();
 	auto& bpb = workBuffer.as<FAT::fat_boot_sector>();
-	bpb = {
+	bpb = FAT::fat_boot_sector{
 		.jmp_boot = {0xEB, 0xFE, 0x90},
 		.system_id = {'M', 'S', 'D', 'O', 'S', '5', '.', '0'},
 		.sector_size = sectorSize,
@@ -657,7 +657,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		.total_sect = uint32_t((sz_vol >= 0x10000) ? sz_vol : 0), // Volume size in 32-bit LBA
 	};
 	if(fsty == FS_FAT32) {
-		bpb.fat32 = {
+		bpb.fat32 = decltype(bpb.fat32){
 			.fat_length = sz_fat,
 			.root_cluster = 2,
 			.info_sector = 1,	 // Offset of FSINFO sector (VBR + 1)
@@ -669,7 +669,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			.fs_type = FSTYPE_FAT32,
 		};
 	} else {
-		bpb.fat16 = {
+		bpb.fat16 = decltype(bpb.fat16){
 			.drive_number = 0x80, // Drive number (for int13)
 			.signature = 0x29,	// Extended boot signature
 			.vol_id = vsn,
@@ -690,7 +690,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		}
 		workBuffer.clear();
 		auto& fsinfo = workBuffer.as<FAT::fat_boot_fsinfo>();
-		fsinfo = {
+		fsinfo = FAT::fat_boot_fsinfo{
 			.signature1 = FAT_FSINFO_SIG1,
 			.signature2 = FAT_FSINFO_SIG2,
 			.free_clusters = n_clst - 1,
