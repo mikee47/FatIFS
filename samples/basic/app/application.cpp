@@ -4,7 +4,7 @@
 #include <IFS/Debug.h>
 #include <IFS/FileSystem.h>
 #include <Storage/FileDevice.h>
-#include <Storage/DiskDevice.h>
+#include <Storage/DiskScanner.h>
 #include <Storage/Debug.h>
 #include <Storage/Sdio.h>
 #include <IFS/Enumerator.h>

@@ -1,8 +1,27 @@
-#include "include/Storage/DiskDevice.h"
+#include "include/Storage/DiskScanner.h"
 #include <Storage/CustomDevice.h>
 #include <debug_progmem.h>
 #include "diskdefs.h"
-#include "WorkBuffer.h"
+#include <Data/Uuid.h>
+
+String toString(Storage::DiskPartition::Type type)
+{
+	using Type = Storage::DiskPartition::Type;
+	switch(type) {
+	case Type::unknown:
+		return F("unknown");
+	case Type::invalid:
+		return F("invalid");
+	case Type::fat:
+		return F("fat");
+	case Type::fat32:
+		return F("fat32");
+	case Type::exfat:
+		return F("exfat");
+	}
+
+	return nullptr;
+}
 
 namespace IFS
 {
@@ -18,21 +37,6 @@ namespace
 {
 using namespace diskdefs;
 
-enum class PartitionType {
-	unknown,
-	invalid,
-	fat,
-	fat32,
-	exfat,
-};
-
-/* Find an FAT volume */
-/* (It supports only generic partitioning rules, MBR, GPT and SFD) */
-
-/*-----------------------------------------------------------------------*/
-/* Load a sector and check if it is an FAT VBR                           */
-/*-----------------------------------------------------------------------*/
-
 String getLabel(const char* s, unsigned length)
 {
 	while(length > 0 && s[length - 1] == 0x20) {
@@ -41,48 +45,54 @@ String getLabel(const char* s, unsigned length)
 	return String(s, length);
 }
 
-// Convert unicode to OEM string, in-place
+// Convert unicode to OEM string
 String unicode_to_oem(const uint16_t* str, size_t length)
 {
-	String s;
-	s.reserve(length);
+	char buf[length];
 	uint16_t c;
-	auto out = s.begin();
+	auto out = buf;
 	size_t outlen{0};
 	while(length-- != 0 && (c = *str++)) {
 		*out++ = IFS::FAT::ff_uni2oem(c, FF_CODE_PAGE);
 		++outlen;
 	}
-	s.setLength(outlen);
-	return s;
+	return String(buf, outlen);
 }
 
-PartitionType identify(uint64_t offset, const WorkBuffer& buffer, Device& device, const gpt_entry* entry = nullptr)
+bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, const gpt_entry* entry = nullptr)
 {
-	auto& dev = static_cast<CustomDevice&>(device);
 	auto& fat = buffer.as<const FAT::fat_boot_sector>();
 	auto& exfat = buffer.as<const EXFAT::boot_sector>();
 
 	if(exfat.signature == MSDOS_MBR_SIGNATURE && exfat.fs_type == FSTYPE_EXFAT) {
-		auto volumeSize = exfat.vol_length << exfat.sect_size_bits;
-		String name;
+		part = {
+			.type = DiskPartition::Type::exfat,
+			.address = offset,
+			.size = exfat.vol_length << exfat.sect_size_bits,
+		};
 		if(entry != nullptr) {
-			name = unicode_to_oem(entry->partition_name, ARRAY_SIZE(entry->partition_name));
+			part.guid = Uuid(entry->unique_partition_guid);
+			part.name = unicode_to_oem(entry->partition_name, ARRAY_SIZE(entry->partition_name));
+			if(part.name.length() == 0) {
+				part.name = part.guid;
+			}
 		}
-		dev.createPartition(name, Partition::SubType::Data::exfat, offset, volumeSize);
 		debug_d("[DD] Found ExFAT @ 0x%llx", offset);
-		return PartitionType::exfat;
+		return true;
 	}
 
 	// Valid JumpBoot code? (short jump, near jump or near call)
 	auto b = fat.jmp_boot[0];
 	if(b == 0xEB || b == 0xE9 || b == 0xE8) {
 		if(fat.signature == MSDOS_MBR_SIGNATURE && fat.fat32.fs_type == FSTYPE_FAT32) {
-			auto volumeSize = (fat.sectors ?: fat.total_sect) * fat.sector_size;
-			String label = getLabel(fat.fat32.vol_label, MSDOS_NAME);
-			dev.createPartition(label, Partition::SubType::Data::fat32, offset, volumeSize);
+			part = {
+				.type = DiskPartition::Type::fat32,
+				.address = offset,
+				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
+				.name = getLabel(fat.fat32.vol_label, MSDOS_NAME),
+			};
 			debug_d("[DD] Found FAT32 @ 0x%luu", offset);
-			return PartitionType::fat32;
+			return true;
 		}
 
 		// FAT volumes formatted with early MS-DOS lack signature/fs_type
@@ -95,81 +105,159 @@ PartitionType identify(uint64_t offset, const WorkBuffer& buffer, Device& device
 		   && fat.dir_entries != 0								// Properness of root dir entries (MNBZ)
 		   && (fat.sectors >= 128 || fat.total_sect >= 0x10000) // Properness of volume sectors (>=128)
 		   && fat.fat_length != 0) {							// Properness of FAT size (MNBZ)
-			auto volumeSize = (fat.sectors ?: fat.total_sect) * fat.sector_size;
-			String label = getLabel(fat.fat16.vol_label, MSDOS_NAME);
-			dev.createPartition(label, Partition::SubType::Data::fat, offset, volumeSize);
+			part = {
+				.type = DiskPartition::Type::fat,
+				.address = offset,
+				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
+				.name = getLabel(fat.fat16.vol_label, MSDOS_NAME),
+			};
 			debug_d("[DD] Found FAT @ 0x%luu", offset);
-			return PartitionType::fat;
+			return true;
 		}
 	}
 
-	return (fat.signature == MSDOS_MBR_SIGNATURE) ? PartitionType::unknown : PartitionType::invalid;
+	if(fat.signature == MSDOS_MBR_SIGNATURE) {
+		part = {
+			.type = DiskPartition::Type::unknown,
+		};
+		return false;
+	}
+
+	part = {
+		.type = DiskPartition::Type::invalid,
+	};
+
+	return true;
 }
 
 } // namespace
 
-bool scanDiskPartitions(Device& device)
+bool DiskScanner::next(DiskPartition& part)
 {
-	constexpr auto sectorSize = SECTOR_SIZE;
+	if(state == State::idle) {
+#if FF_MAX_SS != FF_MIN_SS
+		sectorSize = device.getSectorSize();
+		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize & (sectorSize - 1))) {
+			state = State::error;
+			return false;
+		}
+#else
+		sectorSize = FF_MAX_SS;
+#endif
+		buffer = WorkBuffer(sectorSize, 1);
 
-	WorkBuffer buffer(sectorSize, 1);
-	// Load sector 0 and check it
-	if(!READ_SECTORS(buffer.get(), 0, 1)) {
+		// Load sector 0 and check it
+		if(!READ_SECTORS(buffer.get(), 0, 1)) {
+			state = State::error;
+			return false;
+		}
+
+		if(identify(part, buffer, 0)) {
+			state = State::done;
+			return true;
+		}
+
+		/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
+
+		// GPT protective MBR?
+		auto& mbr = buffer.as<legacy_mbr>();
+		if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
+			// Load GPT header sector
+			if(!READ_SECTORS(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
+				debug_e("[DD] GPT header read failed");
+				state = State::error;
+				return false;
+			}
+			auto& gpt = buffer.as<gpt_header>();
+			if(!verifyGptHeader(gpt)) {
+				debug_e("[DD] GPT invalid");
+				state = State::error;
+				return false;
+			}
+
+			// Scan partition table
+			numPartitionEntries = gpt.num_partition_entries;
+			sector = gpt.partition_entry_lba;
+			partitionIndex = 0;
+			entryBuffer = WorkBuffer(sectorSize, 1);
+			state = State::GPT;
+		} else {
+			numPartitionEntries = ARRAY_SIZE(partlba);
+			for(unsigned i = 0; i < numPartitionEntries; ++i) {
+				partlba[i] = mbr.partition_record[i].starting_lba;
+			}
+			state = State::MBR;
+		}
+	}
+
+	while(partitionIndex < numPartitionEntries) {
+		if(state == State::MBR) {
+			auto sect = partlba[partitionIndex++];
+			if(sect == 0) {
+				continue;
+			}
+			if(!READ_SECTORS(buffer.get(), sect, 1)) {
+				continue;
+			}
+			identify(part, buffer, sect * sectorSize);
+			return true;
+		}
+
+		if(state == State::GPT) {
+			auto entriesPerSector = sectorSize / sizeof(gpt_entry);
+			if(partitionIndex % entriesPerSector == 0) {
+				if(!READ_SECTORS(buffer.get(), sector++, 1)) {
+					state = State::error;
+					return false;
+				}
+			}
+
+			auto entries = buffer.as<gpt_entry[]>();
+			auto& entry = entries[partitionIndex % entriesPerSector];
+			++partitionIndex;
+			if(entry.partition_type_guid != PARTITION_BASIC_DATA_GUID) {
+				continue;
+			}
+
+			if(!READ_SECTORS(entryBuffer.get(), entry.starting_lba, 1)) {
+				continue;
+			}
+
+			identify(part, entryBuffer, entry.starting_lba * sectorSize, &entry);
+			return true;
+		}
+
+		assert(false);
+		state = State::error;
 		return false;
 	}
-	auto type = identify(0, buffer, device);
-	if(type != PartitionType::unknown) {
-		return true;
-	}
 
-	/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
+	state = State::done;
+	return false;
+}
 
-	// GPT protective MBR?
-	auto& mbr = buffer.as<legacy_mbr>();
-	if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
-		// Load GPT header sector
-		if(!READ_SECTORS(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
-			debug_e("[DD] GPT header read failed");
-			return false;
-		}
-		auto& gpt = buffer.as<gpt_header>();
-		if(!verifyGptHeader(gpt)) {
-			debug_e("[DD] GPT invalid");
-			return false;
-		}
-
-		// Scan partition table
-		unsigned num_partition_entries = gpt.num_partition_entries;
-		auto sect = gpt.partition_entry_lba;
-		auto entriesPerSector = sectorSize / sizeof(gpt_entry);
-		auto entries = buffer.as<gpt_entry[]>();
-		for(unsigned i = 0; i < num_partition_entries; ++i) {
-			if(i % entriesPerSector == 0) {
-				if(!READ_SECTORS(buffer.get(), sect++, 1)) {
-					break;
-				}
-			}
-
-			auto& entry = entries[i % entriesPerSector];
-			if(entry.partition_type_guid == PARTITION_BASIC_DATA_GUID) {
-				WorkBuffer buffer(sectorSize, 1);
-				if(READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
-					identify(entry.starting_lba * sectorSize, buffer, device, &entry);
-				}
-			}
+bool scanDiskPartitions(Device& device)
+{
+	auto& dev = static_cast<CustomDevice&>(device);
+	DiskScanner scanner(device);
+	DiskPartition part;
+	while(scanner.next(part)) {
+		Partition::SubType::Data subtype;
+		switch(part.type) {
+		case DiskPartition::Type::fat:
+			subtype = Partition::SubType::Data::fat;
+			break;
+		case DiskPartition::Type::fat32:
+			subtype = Partition::SubType::Data::fat32;
+			break;
+		case DiskPartition::Type::exfat:
+			subtype = Partition::SubType::Data::exfat;
+			break;
+		default:
+			continue;
 		}
 
-		return true;
-	}
-
-	uint32_t partlba[4];
-	for(unsigned i = 0; i < 4; ++i) {
-		partlba[i] = mbr.partition_record[i].starting_lba;
-	}
-	for(auto sect : partlba) {
-		if(sect != 0 && READ_SECTORS(buffer.get(), sect, 1)) {
-			identify(sect * sectorSize, buffer, device);
-		}
+		dev.createPartition(part.name, subtype, part.address, part.size);
 	}
 
 	return true;

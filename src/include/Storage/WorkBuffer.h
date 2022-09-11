@@ -10,9 +10,21 @@ namespace diskdefs
 class WorkBuffer : public std::unique_ptr<uint8_t[]>
 {
 public:
+	WorkBuffer()
+	{
+	}
+
 	WorkBuffer(size_t sectorSize, size_t sectorCount) : mSectorCount(sectorCount), mSize(sectorSize * sectorCount)
 	{
 		reset(new uint8_t[mSize]);
+	}
+
+	WorkBuffer& operator=(WorkBuffer&& other)
+	{
+		std::swap(mSectorCount, other.mSectorCount);
+		std::swap(mSize, other.mSize);
+		unique_ptr::swap(other);
+		return *this;
 	}
 
 	template <typename T> T& as()
@@ -41,8 +53,8 @@ public:
 	}
 
 private:
-	size_t mSectorCount;
-	size_t mSize;
+	size_t mSectorCount{0};
+	size_t mSize{0};
 };
 
 } // namespace diskdefs
