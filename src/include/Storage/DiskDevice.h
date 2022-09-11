@@ -13,6 +13,15 @@ struct MKFS_PARM {
 	uint32_t au_size; ///< Cluster size (byte)
 };
 
-bool scanDiskPartitions(Device& device);
+/**
+ * @brief Add partition to a disk
+ */
+bool createPartition(Partition partition);
+
+/**
+ * @brief Remove partition from a disk
+ * @param partition Describes exactly which partition to remove
+ */
+bool removePartition(Partition partition);
 
 } // namespace Storage

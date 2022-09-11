@@ -11,8 +11,6 @@
 #ifndef FS_PART_EFI_H_INCLUDED
 #define FS_PART_EFI_H_INCLUDED
 
-#include <stdint.h>
-
 #define MSDOS_MBR_SIGNATURE 0xaa55
 #define EFI_PMBR_OSTYPE_EFI 0xEF
 #define EFI_PMBR_OSTYPE_EFI_GPT 0xEE

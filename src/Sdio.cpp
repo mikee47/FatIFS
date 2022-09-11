@@ -34,7 +34,7 @@ Descr: Low-level SDCard functions
 /-------------------------------------------------------------------------*/
 
 #include "include/Storage/Sdio.h"
-#include "include/Storage/DiskDevice.h"
+#include "include/Storage/DiskScanner.h"
 #include <Clock.h>
 #include <debug_progmem.h>
 
