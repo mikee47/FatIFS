@@ -81,12 +81,12 @@
 #define FAT_STATE_DIRTY 0x01
 
 struct __attribute__((packed)) fat_boot_sector {
-	uint8_t ignored[3];   /* Boot strap short or near jump */
+	uint8_t jmp_boot[3];  /* Boot strap short or near jump */
 	char system_id[8];	/* Name - can be used to special case partition manager volumes */
 	uint16_t sector_size; /* bytes per logical sector */
 	uint8_t sec_per_clus; /* sectors/cluster */
 	uint16_t reserved;	/* reserved sectors */
-	uint8_t fats;		  /* number of FATs */
+	uint8_t num_fats;	 /* number of FATs */
 	uint16_t dir_entries; /* root directory entries */
 	uint16_t sectors;	 /* number of sectors */
 	uint8_t media;		  /* media code */
@@ -110,7 +110,7 @@ struct __attribute__((packed)) fat_boot_sector {
 
 		struct __attribute__((packed)) {
 			/* only used by FAT32 */
-			uint32_t length;	   /* sectors/FAT */
+			uint32_t fat_length;   /* sectors/FAT */
 			uint16_t flags;		   /* bit 8: fat mirroring, low 4: active fat */
 			uint16_t version;	  /* major, minor filesystem version */
 			uint32_t root_cluster; /* first cluster in root directory */
@@ -126,8 +126,15 @@ struct __attribute__((packed)) fat_boot_sector {
 			uint64_t fs_type;			/* file system type */
 										/* other fields are not added here */
 		} fat32;
+
+		struct __attribute__((packed)) {
+			uint8_t extra_info[510 - 36];
+			uint16_t signature;
+		};
 	};
 };
+
+static_assert(offsetof(signature, fat_boot_sector) == 510, "Bad fat_boot_sector");
 
 struct fat_boot_fsinfo {
 	uint32_t signature1;	 /* 0x41615252L */
@@ -135,8 +142,11 @@ struct fat_boot_fsinfo {
 	uint32_t signature2;	 /* 0x61417272L */
 	uint32_t free_clusters;  /* Free cluster count.  -1 if unknown */
 	uint32_t next_cluster;   /* Most recently allocated cluster */
-	uint32_t reserved2[4];
+	uint32_t reserved2[3];
+	uint32_t signature;
 };
+
+static_assert(offsetof(signature, fat_boot_fsinfo) == 510, "Bad fat_boot_fsinfo");
 
 struct msdos_dir_entry {
 	uint8_t name[MSDOS_NAME];   /* name and extension */
@@ -150,6 +160,8 @@ struct msdos_dir_entry {
 	uint16_t time, date, start; /* time, date and first cluster */
 	uint32_t size;				/* file size (in bytes) */
 };
+
+static_assert(sizeof(msdos_dir_entry) == 32, "Bad msdos_dir_entry");
 
 /* Up to 13 characters of the name */
 struct MsdosDirSlot {
