@@ -27,9 +27,14 @@
 struct guid_t {
 	uint8_t b[16];
 
-	bool operator==(const guid_t& other)
+	bool operator==(const guid_t& other) const
 	{
 		return memcmp(b, other.b, sizeof(b)) == 0;
+	}
+
+	bool operator!=(const guid_t& other) const
+	{
+		return !operator==(other);
 	}
 };
 
