@@ -315,34 +315,35 @@ bool scanDiskPartitions(Device& device)
 
 using namespace IFS::FAT;
 
-int disk_read(void* buff, LBA_t sector, size_t count)
+int readSectors(Device& device, void* buff, LBA_t sector, size_t count)
 {
 	return 0;
 }
 
-int disk_write(const void* buff, LBA_t sector, size_t count)
+int writeSectors(Device& device, const void* buff, LBA_t sector, size_t count)
 {
 	return 0;
 }
 
-int disk_ioctl(uint8_t cmd, void* buff)
+int disk_ioctl(Device& device, uint8_t cmd, void* buff)
 {
 	return 0;
 }
 
-void ioctl_trim(LBA_t startSector, LBA_t sectorCount)
+void ioctl_trim(Device& device, LBA_t startSector, LBA_t sectorCount)
 {
 	// TODO
 }
 
 /* Create partitions on the physical drive in format of MBR or GPT */
-static FRESULT create_partition(const LBA_t plst[], // Partition list
+static FRESULT create_partition(Device& device,
+								const LBA_t plst[], // Partition list
 								uint8_t sys,		// System ID (for only MBR, temp setting)
 								WorkBuffer& workBuffer)
 {
 	/* Get physical drive size */
 	LBA_t driveSectors;
-	if(disk_ioctl(GET_SECTOR_COUNT, &driveSectors) != RES_OK) {
+	if(disk_ioctl(device, GET_SECTOR_COUNT, &driveSectors) != RES_OK) {
 		return FR_DISK_ERR;
 	}
 
@@ -354,7 +355,7 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 #if FF_MAX_SS == FF_MIN_SS
 		sectorSize = FF_MAX_SS;
 #else
-		if(disk_ioctl(GET_SECTOR_SIZE, &sectorSize) != RES_OK) {
+		if(disk_ioctl(device, GET_SECTOR_SIZE, &sectorSize) != RES_OK) {
 			return FR_DISK_ERR; /* Get sector size */
 		}
 		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize & (sectorSize - 1))) {
@@ -411,11 +412,11 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 				bcc = crc32(bcc, entries, sectorSize);
 				// Write to primary table
 				auto entryRelativeSector = ptIndex / entriesPerSector;
-				if(disk_write(entries, 2 + entryRelativeSector, 1) != RES_OK) {
+				if(writeSectors(device, entries, 2 + entryRelativeSector, 1) != RES_OK) {
 					return FR_DISK_ERR;
 				}
 				// Write to secondary table
-				if(disk_write(entries, top_bpt + entryRelativeSector, 1) != RES_OK) {
+				if(writeSectors(device, entries, top_bpt + entryRelativeSector, 1) != RES_OK) {
 					return FR_DISK_ERR;
 				}
 			}
@@ -438,7 +439,7 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 		};
 		os_get_random(&header.disk_guid, sizeof(efi_guid_t));
 		header.header_crc32 = crc32(&header, sizeof(header));
-		if(disk_write(&header, header.my_lba, 1) != RES_OK) {
+		if(writeSectors(device, &header, header.my_lba, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 
@@ -447,7 +448,7 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 		header.partition_entry_lba = top_bpt;
 		header.header_crc32 = 0;
 		header.header_crc32 = crc32(&header, sizeof(header));
-		if(disk_write(&header, header.my_lba, 1) != RES_OK) {
+		if(writeSectors(device, &header, header.my_lba, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 
@@ -468,7 +469,7 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 			}},
 			.signature = MSDOS_MBR_SIGNATURE,
 		};
-		if(disk_write(&mbr, 0, 1) != RES_OK) {
+		if(writeSectors(device, &mbr, 0, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 	} else
@@ -530,7 +531,7 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 		}
 
 		mbr.signature = MSDOS_MBR_SIGNATURE;
-		if(disk_write(&mbr, 0, 1) != RES_OK) {
+		if(writeSectors(device, &mbr, 0, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 	}
@@ -538,8 +539,8 @@ static FRESULT create_partition(const LBA_t plst[], // Partition list
 	return FR_OK;
 }
 
-FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol, uint32_t sz_au,
-						  uint32_t sz_blk, uint32_t vsn)
+FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol,
+						  uint32_t sz_au, uint32_t sz_blk, uint32_t vsn)
 {
 	if(sz_vol < 0x1000) {
 		// Volume too small for exFAT
@@ -547,7 +548,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 	}
 #if FF_USE_TRIM
 	// Inform storage device that the volume area may be erased
-	ioctl_trim(b_vol, sz_vol);
+	ioctl_trim(device, b_vol, sz_vol);
 #endif
 	/* Determine FAT location, data location and number of clusters */
 	if(sz_au == 0) { /* AU auto-selection */
@@ -636,7 +637,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 		// Write buffered data when buffer full or end of process
 		if(si == 0 || sectorOffset == workBuffer.size()) {
 			auto n = getBlockCount(sectorOffset, sectorSize);
-			if(disk_write(workBuffer.get(), sect, n) != RES_OK) {
+			if(writeSectors(device, workBuffer.get(), sect, n) != RES_OK) {
 				return FR_DISK_ERR;
 			}
 			sect += n;
@@ -659,7 +660,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 			workBuffer[i / 8] |= 1 << (i % 8);
 		}
 		auto n = std::min(nsect, workBuffer.sectors());
-		if(disk_write(workBuffer.get(), sect, n) != RES_OK) {
+		if(writeSectors(device, workBuffer.get(), sect, n) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		sect += n;
@@ -691,7 +692,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 			}
 		} while(nbit != 0 && clu < clusterCount);
 		auto n = std::min(nsect, workBuffer.sectors());
-		if(disk_write(fat, sect, n) != RES_OK) {
+		if(writeSectors(device, fat, sect, n) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		sect += n;
@@ -717,7 +718,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 	nsect = sz_au; /* Start of the root directory and number of sectors */
 	do {		   /* Fill root directory sectors */
 		auto n = std::min(nsect, workBuffer.sectors());
-		if(disk_write(dir, sect, n) != RES_OK) {
+		if(writeSectors(device, dir, sect, n) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		// Rest of entries are filled with zero
@@ -764,7 +765,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 			}
 			sum = xsum32(workBuffer[i], sum);
 		}
-		if(disk_write(&bpb, sect++, 1) != RES_OK) {
+		if(writeSectors(device, &bpb, sect++, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		/* Extended bootstrap record (+1..+8) */
@@ -772,7 +773,7 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 		bpb.signature = BOOT_SIGNATURE;
 		for(j = 1; j < 9; ++j) {
 			sum = xsum32(&bpb, sectorSize, sum);
-			if(disk_write(&bpb, sect++, 1) != RES_OK) {
+			if(writeSectors(device, &bpb, sect++, 1) != RES_OK) {
 				return (FR_DISK_ERR);
 			}
 		}
@@ -780,14 +781,14 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 		workBuffer.clear();
 		for(; j < 11; j++) {
 			sum = xsum32(workBuffer.get(), sectorSize, sum);
-			if(disk_write(workBuffer.get(), sect++, 1) != RES_OK) {
+			if(writeSectors(device, workBuffer.get(), sect++, 1) != RES_OK) {
 				return FR_DISK_ERR;
 			}
 		}
 		/* Fill sum record (+11) with checksum value */
 		auto sumRecord = workBuffer.as<uint32_t[]>();
 		std::fill_n(sumRecord, sectorSize / sizeof(uint32_t), sum);
-		if(disk_write(sumRecord, sect++, 1) != RES_OK) {
+		if(writeSectors(device, sumRecord, sect++, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 	}
@@ -795,8 +796,9 @@ FRESULT createExFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_v
 	return FR_OK;
 }
 
-FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol, uint32_t sz_au,
-						uint32_t sz_blk, uint32_t vsn, int fsty, uint8_t fsopt, unsigned n_root, unsigned n_fat)
+FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol,
+						uint32_t sz_au, uint32_t sz_blk, uint32_t vsn, int fsty, uint8_t fsopt, unsigned n_root,
+						unsigned n_fat)
 {
 	uint32_t pau;	// Physical Allocation Unit
 	uint32_t n_clst; // Number of clusters
@@ -929,7 +931,7 @@ FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol
 
 #if FF_USE_TRIM
 	// Inform storage device that the volume area may be erased
-	ioctl_trim(b_vol, sz_vol);
+	ioctl_trim(device, b_vol, sz_vol);
 #endif
 	/* Create FAT VBR */
 	workBuffer.clear();
@@ -972,13 +974,13 @@ FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol
 		};
 	}
 	bpb.signature = BOOT_SIGNATURE;
-	if(disk_write(&bpb, b_vol, 1) != RES_OK) {
+	if(writeSectors(device, &bpb, b_vol, 1) != RES_OK) {
 		return FR_DISK_ERR;
 	}
 
 	/* Create FSINFO record if needed */
 	if(fsty == FS_FAT32) {
-		disk_write(&bpb, b_vol + 6, 1); /* Write backup VBR (VBR + 6) */
+		writeSectors(device, &bpb, b_vol + 6, 1); /* Write backup VBR (VBR + 6) */
 		workBuffer.clear();
 		auto& fsinfo = workBuffer.as<FAT::fat_boot_fsinfo>();
 		fsinfo = {
@@ -988,8 +990,8 @@ FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol
 			.next_cluster = 2,
 			.signature = BOOT_SIGNATURE,
 		};
-		disk_write(&fsinfo, b_vol + 7, 1); // Write backup FSINFO (VBR + 7)
-		disk_write(&fsinfo, b_vol + 1, 1); // Write original FSINFO (VBR + 1)
+		writeSectors(device, &fsinfo, b_vol + 7, 1); // Write backup FSINFO (VBR + 7)
+		writeSectors(device, &fsinfo, b_vol + 1, 1); // Write original FSINFO (VBR + 1)
 	}
 
 	/* Initialize FAT area */
@@ -1010,7 +1012,7 @@ FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol
 		for(auto nsect = sz_fat; nsect != 0;) {
 			// Fill FAT sectors
 			auto n = std::min(nsect, workBuffer.sectors());
-			if(disk_write(workBuffer.get(), sect, n) != RES_OK) {
+			if(writeSectors(device, workBuffer.get(), sect, n) != RES_OK) {
 				return FR_DISK_ERR;
 			}
 			// Rest of FAT is empty
@@ -1023,7 +1025,7 @@ FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol
 	/* Initialize root directory (fill with zero) */
 	for(auto nsect = (fsty == FS_FAT32) ? pau : sz_dir; nsect != 0;) {
 		auto n = std::min(nsect, workBuffer.sectors());
-		if(disk_write(workBuffer.get(), sect, n) != RES_OK) {
+		if(writeSectors(device, workBuffer.get(), sect, n) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		sect += n;
@@ -1033,7 +1035,7 @@ FRESULT createFatVolume(uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol
 	return FR_OK;
 }
 
-FRESULT f_mkfs(const MKFS_PARM* opt)
+FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 {
 	constexpr uint8_t ipart{0};
 	uint8_t fsty;
@@ -1047,7 +1049,7 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 
 	/* Get physical drive status (sz_drv, sz_blk, sectorSize) */
 	uint32_t sz_blk = opt->align;
-	if(sz_blk == 0 && disk_ioctl(GET_BLOCK_SIZE, &sz_blk) != RES_OK) {
+	if(sz_blk == 0 && disk_ioctl(device, GET_BLOCK_SIZE, &sz_blk) != RES_OK) {
 		sz_blk = 1;
 	}
 	if(sz_blk == 0 || sz_blk > 0x8000 || (sz_blk & (sz_blk - 1))) {
@@ -1056,7 +1058,7 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 
 	uint16_t sectorSize;
 #if FF_MAX_SS != FF_MIN_SS
-	if(disk_ioctl(GET_SECTOR_SIZE, &sectorSize) != RES_OK) {
+	if(disk_ioctl(device, GET_SECTOR_SIZE, &sectorSize) != RES_OK) {
 		return FR_DISK_ERR;
 	}
 	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize & (sectorSize - 1))) {
@@ -1088,7 +1090,7 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 		/* Get partition location from the existing partition table */
 
 		// Load MBR
-		if(disk_read(workBuffer.get(), 0, 1) != RES_OK) {
+		if(readSectors(device, workBuffer.get(), 0, 1) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		auto& mbr = *reinterpret_cast<legacy_mbr*>(workBuffer.get());
@@ -1099,7 +1101,7 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 		// GPT protective MBR?
 		if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
 			/* Get the partition location from GPT */
-			if(disk_read(workBuffer.get(), 1, 1) != RES_OK) {
+			if(readSectors(device, workBuffer.get(), 1, 1) != RES_OK) {
 				return FR_DISK_ERR;
 			}
 			auto& gpt = workBuffer.as<gpt_header>();
@@ -1114,7 +1116,7 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 			/* Find MS Basic partition with order of ipart */
 			for(unsigned iEntry = 0; iEntry < n_ent; ++iEntry) {
 				if(iEntry % entriesPerSector == 0) {
-					if(disk_read(entries, pt_lba++, 1) != RES_OK) {
+					if(readSectors(device, entries, pt_lba++, 1) != RES_OK) {
 						return FR_DISK_ERR;
 					}
 				}
@@ -1149,7 +1151,7 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 		}
 	} else {
 		/* The volume is associated with a physical drive */
-		if(disk_ioctl(GET_SECTOR_COUNT, &sz_vol) != RES_OK) {
+		if(disk_ioctl(device, GET_SECTOR_COUNT, &sz_vol) != RES_OK) {
 			return FR_DISK_ERR;
 		}
 		// To be partitioned?
@@ -1216,12 +1218,12 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 #if FF_FS_EXFAT
 	if(fsty == FS_EXFAT) {
 		/* Create an exFAT volume */
-		createExFatVolume(sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn);
+		createExFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn);
 
 	} else
 #endif /* FF_FS_EXFAT */
 	{
-		createFatVolume(sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn, fsty, fsopt, n_root, n_fat);
+		createFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn, fsty, fsopt, n_root, n_fat);
 	}
 
 	/* A FAT volume has been created here */
@@ -1248,24 +1250,24 @@ FRESULT f_mkfs(const MKFS_PARM* opt)
 		if(!FF_LBA64 || !(fsopt & 0x80)) {
 			/* Update system ID in the partition table (MBR) */
 			auto& mbr = workBuffer.as<legacy_mbr>();
-			if(disk_read(&mbr, 0, 1) != RES_OK) {
+			if(readSectors(device, &mbr, 0, 1) != RES_OK) {
 				return FR_DISK_ERR;
 			}
 			mbr.partition_record[ipart - 1].os_type = sys;
-			if(disk_write(&mbr, 0, 1) != RES_OK) {
+			if(writeSectors(device, &mbr, 0, 1) != RES_OK) {
 				return (FR_DISK_ERR);
 			}
 		}
 	} else if(!(fsopt & FM_SFD)) {
 		// Not in SFD: create partition table
 		LBA_t lba[] = {sz_vol, 0};
-		auto fr = create_partition(lba, sys, workBuffer);
+		auto fr = create_partition(device, lba, sys, workBuffer);
 		if(fr != FR_OK) {
 			return fr;
 		}
 	}
 
-	if(disk_ioctl(CTRL_SYNC, 0) != RES_OK) {
+	if(disk_ioctl(device, CTRL_SYNC, 0) != RES_OK) {
 		return FR_DISK_ERR;
 	}
 
