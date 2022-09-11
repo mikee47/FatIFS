@@ -353,24 +353,28 @@ int FileSystem::format()
 	auto wasMounted = mounted;
 	mounted = false;
 
-	BYTE work_area[FF_MAX_SS];
-	MKFS_PARM opt{FM_SFD};
-	using SubType = Storage::Partition::SubType::Data;
-	switch(SubType(partition.subType())) {
-	case SubType::fat:
-		opt.fmt |= FM_FAT;
-		break;
-	case SubType::fat32:
-		opt.fmt |= FM_FAT32;
-		break;
-	case SubType::exfat:
-		opt.fmt |= FM_EXFAT;
-		break;
-	default:
-		return Error::BadPartition;
-	}
+	// BYTE work_area[FF_MAX_SS];
+	// MKFS_PARM opt{FM_SFD};
+	// using SubType = Storage::Partition::SubType::Data;
+	// switch(SubType(partition.subType())) {
+	// case SubType::fat:
+	// 	opt.fmt |= FM_FAT;
+	// 	break;
+	// case SubType::fat32:
+	// 	opt.fmt |= FM_FAT32;
+	// 	break;
+	// case SubType::exfat:
+	// 	opt.fmt |= FM_EXFAT;
+	// 	break;
+	// default:
+	// 	return Error::BadPartition;
+	// }
 	currentVolume = this;
-	auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
+
+	// TODO
+	// auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
+	auto fr = FR_MKFS_ABORTED;
+
 	if(fr != FR_OK) {
 		auto err = sysError(fr);
 		debug_ifserr(err, "format()");
