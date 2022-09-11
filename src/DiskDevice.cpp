@@ -1,4 +1,5 @@
 #include "include/Storage/DiskDevice.h"
+#include "include/Storage/WorkBuffer.h"
 #include <Storage/CustomDevice.h>
 #include <debug_progmem.h>
 #include "diskdefs.h"
@@ -32,44 +33,8 @@ enum class PartitionType {
 	exfat,
 };
 
-class WorkBuffer : public std::unique_ptr<uint8_t[]>
-{
-public:
-	WorkBuffer(size_t sectorSize, size_t sectorCount) : mSectorCount(sectorCount), mSize(sectorSize * sectorCount)
-	{
-		reset(new uint8_t[mSize]);
-	}
-
-	template <typename T> T& as()
-	{
-		return *reinterpret_cast<T*>(get());
-	}
-
-	size_t size() const
-	{
-		return mSize;
-	}
-
-	size_t sectors() const
-	{
-		return mSectorCount;
-	}
-
-	void clear()
-	{
-		std::fill_n(get(), mSize, 0);
-	}
-
-private:
-	size_t mSectorCount;
-	size_t mSize;
-};
-
 using LBA_t = IFS::FAT::LBA_t;
 using FRESULT = IFS::FAT::FRESULT;
-
-#define READ_SECTORS(buff, sector, count) device.read((sector)*sectorSize, buff, (count)*sectorSize)
-#define WRITE_SECTORS(buff, sector, count) device.write((sector)*sectorSize, buff, (count)*sectorSize)
 
 /* Find an FAT volume */
 /* (It supports only generic partitioning rules, MBR, GPT and SFD) */

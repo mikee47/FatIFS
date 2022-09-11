@@ -2,6 +2,7 @@
 #include <Storage/CustomDevice.h>
 #include <debug_progmem.h>
 #include "diskdefs.h"
+#include "WorkBuffer.h"
 
 namespace IFS
 {
@@ -23,39 +24,6 @@ enum class PartitionType {
 	fat,
 	fat32,
 	exfat,
-};
-
-class WorkBuffer : public std::unique_ptr<uint8_t[]>
-{
-public:
-	WorkBuffer(size_t sectorSize, size_t sectorCount) : mSectorCount(sectorCount), mSize(sectorSize * sectorCount)
-	{
-		reset(new uint8_t[mSize]);
-	}
-
-	template <typename T> T& as()
-	{
-		return *reinterpret_cast<T*>(get());
-	}
-
-	size_t size() const
-	{
-		return mSize;
-	}
-
-	size_t sectors() const
-	{
-		return mSectorCount;
-	}
-
-	void clear()
-	{
-		std::fill_n(get(), mSize, 0);
-	}
-
-private:
-	size_t mSectorCount;
-	size_t mSize;
 };
 
 /* Find an FAT volume */
@@ -89,11 +57,11 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return s;
 }
 
-PartitionType identify(uint64_t offset, const void* sector, Device& device, const gpt_entry* entry = nullptr)
+PartitionType identify(uint64_t offset, const WorkBuffer& buffer, Device& device, const gpt_entry* entry = nullptr)
 {
 	auto& dev = static_cast<CustomDevice&>(device);
-	auto& fat = *static_cast<const FAT::fat_boot_sector*>(sector);
-	auto& exfat = *static_cast<const EXFAT::boot_sector*>(sector);
+	auto& fat = buffer.as<const FAT::fat_boot_sector>();
+	auto& exfat = buffer.as<const EXFAT::boot_sector>();
 
 	if(exfat.signature == MSDOS_MBR_SIGNATURE && exfat.fs_type == FSTYPE_EXFAT) {
 		auto volumeSize = exfat.vol_length << exfat.sect_size_bits;
@@ -142,9 +110,11 @@ PartitionType identify(uint64_t offset, const void* sector, Device& device, cons
 
 bool scanDiskPartitions(Device& device)
 {
+	constexpr auto sectorSize = SECTOR_SIZE;
+
+	WorkBuffer buffer(sectorSize, 1);
 	// Load sector 0 and check it
-	uint8_t buffer[SECTOR_SIZE];
-	if(!device.read(0, buffer, SECTOR_SIZE)) {
+	if(!READ_SECTORS(buffer.get(), 0, 1)) {
 		return false;
 	}
 	auto type = identify(0, buffer, device);
@@ -155,14 +125,14 @@ bool scanDiskPartitions(Device& device)
 	/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
 
 	// GPT protective MBR?
-	auto& mbr = *reinterpret_cast<legacy_mbr*>(buffer);
+	auto& mbr = buffer.as<legacy_mbr>();
 	if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
 		// Load GPT header sector
-		if(!device.read(GPT_PRIMARY_PARTITION_TABLE_LBA * SECTOR_SIZE, buffer, SECTOR_SIZE)) {
+		if(!READ_SECTORS(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
 			debug_e("[DD] GPT header read failed");
 			return false;
 		}
-		auto& gpt = *reinterpret_cast<gpt_header*>(buffer);
+		auto& gpt = buffer.as<gpt_header>();
 		if(!verifyGptHeader(gpt)) {
 			debug_e("[DD] GPT invalid");
 			return false;
@@ -170,24 +140,23 @@ bool scanDiskPartitions(Device& device)
 
 		// Scan partition table
 		unsigned num_partition_entries = gpt.num_partition_entries;
-		uint64_t gptEntryOffset = gpt.partition_entry_lba * SECTOR_SIZE;
-		for(unsigned i = 0; i < num_partition_entries; i++) {
-			if(gptEntryOffset % SECTOR_SIZE == 0) {
-				if(!device.read(gptEntryOffset, buffer, SECTOR_SIZE)) {
+		auto sect = gpt.partition_entry_lba;
+		auto entriesPerSector = sectorSize / sizeof(gpt_entry);
+		auto entries = buffer.as<gpt_entry[]>();
+		for(unsigned i = 0; i < num_partition_entries; ++i) {
+			if(i % entriesPerSector == 0) {
+				if(!READ_SECTORS(buffer.get(), sect++, 1)) {
 					break;
 				}
 			}
 
-			auto& entry = *reinterpret_cast<gpt_entry*>(&buffer[gptEntryOffset % SECTOR_SIZE]);
+			auto& entry = entries[i % entriesPerSector];
 			if(entry.partition_type_guid == PARTITION_BASIC_DATA_GUID) {
-				uint8_t buffer[SECTOR_SIZE];
-				auto offset = entry.starting_lba * SECTOR_SIZE;
-				if(device.read(offset, &buffer, SECTOR_SIZE)) {
-					identify(offset, buffer, device, &entry);
+				WorkBuffer buffer(sectorSize, 1);
+				if(READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
+					identify(entry.starting_lba * sectorSize, buffer, device, &entry);
 				}
 			}
-
-			gptEntryOffset += sizeof(gpt_entry);
 		}
 
 		return true;
@@ -197,10 +166,9 @@ bool scanDiskPartitions(Device& device)
 	for(unsigned i = 0; i < 4; ++i) {
 		partlba[i] = mbr.partition_record[i].starting_lba;
 	}
-	for(unsigned i = 0; i < 4; ++i) {
-		uint64_t offset = partlba[i] * SECTOR_SIZE;
-		if(offset != 0 && device.read(offset, buffer, SECTOR_SIZE)) {
-			identify(offset, buffer, device);
+	for(auto sect : partlba) {
+		if(sect != 0 && READ_SECTORS(buffer.get(), sect, 1)) {
+			identify(sect * sectorSize, buffer, device);
 		}
 	}
 
