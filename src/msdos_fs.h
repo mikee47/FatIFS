@@ -56,9 +56,9 @@
 #define FAT_START_ENT 2
 
 /* maximum number of clusters */
-#define MAX_FAT12 0xFF4
-#define MAX_FAT16 0xFFF4
-#define MAX_FAT32 0x0FFFFFF6
+// #define MAX_FAT12 0xFF4
+// #define MAX_FAT16 0xFFF4
+// #define MAX_FAT32 0x0FFFFFF6
 
 /* bad cluster mark */
 #define BAD_FAT12 0xFF7
@@ -134,7 +134,7 @@ struct __attribute__((packed)) fat_boot_sector {
 	};
 };
 
-static_assert(offsetof(signature, fat_boot_sector) == 510, "Bad fat_boot_sector");
+static_assert(offsetof(fat_boot_sector, signature) == 510, "Bad fat_boot_sector");
 
 struct fat_boot_fsinfo {
 	uint32_t signature1;	 /* 0x41615252L */
@@ -142,11 +142,11 @@ struct fat_boot_fsinfo {
 	uint32_t signature2;	 /* 0x61417272L */
 	uint32_t free_clusters;  /* Free cluster count.  -1 if unknown */
 	uint32_t next_cluster;   /* Most recently allocated cluster */
-	uint32_t reserved2[3];
-	uint32_t signature;
+	uint16_t reserved2[7];
+	uint16_t signature;
 };
 
-static_assert(offsetof(signature, fat_boot_fsinfo) == 510, "Bad fat_boot_fsinfo");
+static_assert(offsetof(fat_boot_fsinfo, signature) == 510, "Bad fat_boot_fsinfo");
 
 struct msdos_dir_entry {
 	uint8_t name[MSDOS_NAME];   /* name and extension */

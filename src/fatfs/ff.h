@@ -32,15 +32,6 @@
 
 /* Integer types used for FatFs API */
 
-#if defined(_WIN32)		/* Windows VC++ (for development only) */
-#define FF_INTDEF 2
-#include <windows.h>
-typedef unsigned __int64 QWORD;
-#include <float.h>
-#define isnan(v) _isnan(v)
-#define isinf(v) (!_finite(v))
-
-#elif (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(__cplusplus)	/* C99 or later */
 #define FF_INTDEF 2
 #include <stdint.h>
 typedef unsigned int	UINT;	/* int must be 16-bit or 32-bit */
@@ -49,16 +40,6 @@ typedef uint16_t		WORD;	/* 16-bit unsigned integer */
 typedef uint32_t		DWORD;	/* 32-bit unsigned integer */
 typedef uint64_t		QWORD;	/* 64-bit unsigned integer */
 typedef WORD			WCHAR;	/* UTF-16 character type */
-
-#else  	/* Earlier than C99 */
-#define FF_INTDEF 1
-typedef unsigned int	UINT;	/* int must be 16-bit or 32-bit */
-typedef unsigned char	BYTE;	/* char must be 8-bit */
-typedef unsigned short	WORD;	/* 16-bit unsigned integer */
-typedef unsigned long	DWORD;	/* 32-bit unsigned integer */
-typedef WORD			WCHAR;	/* UTF-16 character type */
-#endif
-
 
 /* Type of file size and LBA variables */
 
@@ -411,5 +392,15 @@ int ff_del_syncobj (FF_SYNC_t sobj);	/* Delete a sync object */
 #define	AM_SYS	0x04	/* System */
 #define AM_DIR	0x10	/* Directory */
 #define AM_ARC	0x20	/* Archive */
+
+
+/* Limits and boundaries */
+#define MAX_DIR		0x200000		/* Max size of FAT directory */
+#define MAX_DIR_EX	0x10000000		/* Max size of exFAT directory */
+#define MAX_FAT12	0xFF5			/* Max FAT12 clusters (differs from specs, but right for real DOS/Windows behavior) */
+#define MAX_FAT16	0xFFF5			/* Max FAT16 clusters (differs from specs, but right for real DOS/Windows behavior) */
+#define MAX_FAT32	0x0FFFFFF5		/* Max FAT32 clusters (not specified, practical limit) */
+#define MAX_EXFAT	0x7FFFFFFD		/* Max exFAT clusters (differs from specs, implementation limit) */
+
 
 #endif /* FF_DEFINED */

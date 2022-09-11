@@ -35,15 +35,6 @@
 #endif
 
 
-/* Limits and boundaries */
-#define MAX_DIR		0x200000		/* Max size of FAT directory */
-#define MAX_DIR_EX	0x10000000		/* Max size of exFAT directory */
-#define MAX_FAT12	0xFF5			/* Max FAT12 clusters (differs from specs, but right for real DOS/Windows behavior) */
-#define MAX_FAT16	0xFFF5			/* Max FAT16 clusters (differs from specs, but right for real DOS/Windows behavior) */
-#define MAX_FAT32	0x0FFFFFF5		/* Max FAT32 clusters (not specified, practical limit) */
-#define MAX_EXFAT	0x7FFFFFFD		/* Max exFAT clusters (differs from specs, implementation limit) */
-
-
 /* Character code support macros */
 #define IsUpper(c)		((c) >= 'A' && (c) <= 'Z')
 #define IsLower(c)		((c) >= 'a' && (c) <= 'z')
