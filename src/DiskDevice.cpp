@@ -448,8 +448,8 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 			.root_cluster = 2 + clen[0] + clen[1],  // Root dir cluster #
 			.vol_serial = vsn,
 			.fs_revision = 0x0100, // Filesystem version (1.00)
-			.sect_size_bits = uint8_t(__builtin_ffs(sectorSize) - 1),
-			.sect_per_clus_bits = uint8_t(__builtin_ffs(sz_au) - 1),
+			.sect_size_bits = getSizeBits(sectorSize),
+			.sect_per_clus_bits = getSizeBits(sz_au),
 			.num_fats = 1,
 			.drv_sel = 0x80,		   // Drive number (for int13)
 			.boot_code = {0xEB, 0xFE}, // Boot code (x86)

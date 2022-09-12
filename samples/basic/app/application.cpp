@@ -44,10 +44,10 @@ void listDirectoryAsync(IFS::FileSystem* fs, const String& path)
 		} else {
 			Serial.print(s.pad(maxWidth));
 		}
-		Serial << String(stat.size, DEC, 8) << ' ' << IFS::Debug::timeToStr(stat.mtime) << ' '
+		Serial << String(stat.size, DEC).padLeft(8) << ' ' << String(stat.mtime) << ' '
 			   << getFileAttributeString(stat.attr) << endl;
 
-		// IFS::Debug::printFileInfo(Serial, stat);
+		// Serial << stat << endl;
 	});
 
 	enumCallback(e);
