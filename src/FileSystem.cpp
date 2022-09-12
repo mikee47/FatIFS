@@ -35,8 +35,8 @@ namespace IFS
 {
 namespace FAT
 {
-#include "fatfs/ff.h"
-#include "fatfs/diskio.h"
+#include "../fatfs/ff.h"
+#include "../fatfs/diskio.h"
 
 struct S_FATFS : public FATFS {
 };
@@ -102,8 +102,8 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
 	return currentVolume->ioctl(cmd, buff) ? RES_OK : RES_PARERR;
 }
 
-#include "fatfs/ffunicode.c"
-#include "fatfs/ff.c"
+#include "../fatfs/ffunicode.c"
+#include "../fatfs/ff.c"
 
 const char* getFatPath(const char* path)
 {

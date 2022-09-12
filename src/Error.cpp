@@ -18,7 +18,7 @@
  ****/
 
 #include "include/IFS/FatFS/Error.h"
-#include "fatfs/ff.h"
+#include "../fatfs/ff.h"
 
 #define FATFS_RESULT_MAP(XX)                                                                                           \
 	XX(OK, 0, "Succeeded")                                                                                             \

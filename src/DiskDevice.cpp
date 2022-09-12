@@ -14,8 +14,7 @@ namespace IFS
 {
 namespace FAT
 {
-#include "fatfs/ff.h"
-// #include "fatfs/diskio.h"
+#include "../fatfs/ff.h"
 } // namespace FAT
 } // namespace IFS
 
@@ -66,12 +65,12 @@ FRESULT create_partition(Device& device,
 #if FF_MAX_SS == FF_MIN_SS
 		sectorSize = FF_MAX_SS;
 #endif
-		uint32_t align = GPT_ALIGN / sectorSize;						 // Partition alignment for GPT [sector]
+		uint32_t align = GPT_ALIGN / sectorSize;						   // Partition alignment for GPT [sector]
 		unsigned ptSectors = GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize; // Size of partition table [sector]
-		uint64_t top_bpt = driveSectors - ptSectors - 1;				 // Backup partiiton table start sector
-		uint64_t nxt_alloc = 2 + ptSectors;								 // First allocatable sector
-		uint64_t sz_pool = top_bpt - nxt_alloc;							 // Size of allocatable area
-		uint32_t bcc = 0;												 // Cumulative partition entry checksum
+		uint64_t top_bpt = driveSectors - ptSectors - 1;				   // Backup partiiton table start sector
+		uint64_t nxt_alloc = 2 + ptSectors;								   // First allocatable sector
+		uint64_t sz_pool = top_bpt - nxt_alloc;							   // Size of allocatable area
+		uint32_t bcc = 0;												   // Cumulative partition entry checksum
 		uint64_t sz_part = 1;
 		unsigned ptIndex = 0; // partition table index
 		unsigned si = 0;	  // size table index

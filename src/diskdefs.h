@@ -26,15 +26,15 @@ namespace diskdefs
 {
 namespace FAT
 {
-#include "linux/msdos_fs.h"
+#include "../linux/msdos_fs.h"
 }
 
 namespace EXFAT
 {
-#include "linux/exfat_raw.h"
+#include "../linux/exfat_raw.h"
 }
 
-#include "linux/efi.h"
+#include "../linux/efi.h"
 
 template <typename T> T align_up(T value, uint32_t align)
 {
