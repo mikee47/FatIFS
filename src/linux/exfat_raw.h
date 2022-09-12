@@ -6,8 +6,6 @@
 #ifndef _EXFAT_RAW_H
 #define _EXFAT_RAW_H
 
-#include <stdint.h>
-
 #define BOOT_SIGNATURE 0xAA55
 #define EXBOOT_SIGNATURE 0xAA550000
 #define STR_EXFAT "EXFAT   " /* size should be 8 */
@@ -79,7 +77,7 @@
 #define EXFAT_MAX_SECT_PER_CLUS_BITS(x) (25 - (x)->sect_size_bits)
 
 /* EXFAT: Main and Backup Boot Sector (512 bytes) */
-struct __attribute__((packed)) boot_sector {
+struct __attribute__((packed)) boot_sector_t {
 	uint8_t jmp_boot[BOOTSEC_JUMP_BOOT_LEN];
 	uint64_t fs_type;
 	uint8_t must_be_zero[BOOTSEC_OLDBPB_LEN];
@@ -103,7 +101,7 @@ struct __attribute__((packed)) boot_sector {
 	uint16_t signature;
 };
 
-struct __attribute__((packed)) exfat_dentry {
+struct __attribute__((packed)) exfat_dentry_t {
 	uint8_t type;
 	union {
 		/* file directory entry */
@@ -160,7 +158,7 @@ struct __attribute__((packed)) exfat_dentry {
 	};
 };
 
-static_assert(sizeof(exfat_dentry) == 32, "Bad exfat_dentry");
+static_assert(sizeof(exfat_dentry_t) == 32, "Bad exfat_dentry_t");
 
 #define EXFAT_TZ_VALID (1 << 7)
 

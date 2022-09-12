@@ -58,7 +58,7 @@ inline uint32_t crc32(const void* data, size_t length)
 uint32_t xsum32(uint8_t dat, uint32_t sum);
 uint32_t xsum32(const void* buffer, size_t length, uint32_t sum);
 
-bool verifyGptHeader(gpt_header& gpt);
+bool verifyGptHeader(gpt_header_t& gpt);
 
 } // namespace diskdefs
 } // namespace Storage

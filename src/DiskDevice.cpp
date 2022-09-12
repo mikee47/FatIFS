@@ -67,7 +67,7 @@ FRESULT create_partition(Device& device,
 		sectorSize = FF_MAX_SS;
 #endif
 		uint32_t align = GPT_ALIGN / sectorSize;						 // Partition alignment for GPT [sector]
-		unsigned ptSectors = GPT_ITEMS * sizeof(gpt_entry) / sectorSize; // Size of partition table [sector]
+		unsigned ptSectors = GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize; // Size of partition table [sector]
 		uint64_t top_bpt = driveSectors - ptSectors - 1;				 // Backup partiiton table start sector
 		uint64_t nxt_alloc = 2 + ptSectors;								 // First allocatable sector
 		uint64_t sz_pool = top_bpt - nxt_alloc;							 // Size of allocatable area
@@ -75,8 +75,8 @@ FRESULT create_partition(Device& device,
 		uint64_t sz_part = 1;
 		unsigned ptIndex = 0; // partition table index
 		unsigned si = 0;	  // size table index
-		auto entries = workBuffer.as<gpt_entry[]>();
-		auto entriesPerSector = sectorSize / sizeof(gpt_entry);
+		auto entries = workBuffer.as<gpt_entry_t[]>();
+		auto entriesPerSector = sectorSize / sizeof(gpt_entry_t);
 		for(; ptIndex < GPT_ITEMS; ++ptIndex) {
 			auto i = ptIndex % entriesPerSector;
 			if(i == 0) {
@@ -127,18 +127,18 @@ FRESULT create_partition(Device& device,
 		}
 
 		/* Create primary GPT header */
-		auto& header = workBuffer.as<gpt_header>();
-		header = gpt_header{
+		auto& header = workBuffer.as<gpt_header_t>();
+		header = gpt_header_t{
 			.signature = GPT_HEADER_SIGNATURE,
 			.revision = GPT_HEADER_REVISION_V1,
-			.header_size = sizeof(gpt_header),
+			.header_size = sizeof(gpt_header_t),
 			.my_lba = 1,
 			.alternate_lba = driveSectors - 1,
 			.first_usable_lba = 2 + ptSectors,
 			.last_usable_lba = top_bpt - 1,
 			.partition_entry_lba = 2,
 			.num_partition_entries = GPT_ITEMS,
-			.sizeof_partition_entry = sizeof(gpt_entry),
+			.sizeof_partition_entry = sizeof(gpt_entry_t),
 			.partition_entry_array_crc32 = bcc,
 		};
 		os_get_random(&header.disk_guid, sizeof(efi_guid_t));
@@ -157,8 +157,8 @@ FRESULT create_partition(Device& device,
 		}
 
 		/* Create protective MBR */
-		auto& mbr = workBuffer.as<legacy_mbr>();
-		mbr = legacy_mbr{
+		auto& mbr = workBuffer.as<legacy_mbr_t>();
+		mbr = legacy_mbr_t{
 			.partition_record = {{
 				.boot_indicator = 0,
 				.start_head = 0,
@@ -193,7 +193,7 @@ FRESULT create_partition(Device& device,
 		}
 
 		workBuffer.clear();
-		auto& mbr = workBuffer.as<legacy_mbr>();
+		auto& mbr = workBuffer.as<legacy_mbr_t>();
 
 		unsigned i;
 		uint32_t nxt_alloc32;
@@ -405,7 +405,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 
 	/* Initialize the root directory */
 	workBuffer.clear();
-	auto dir = workBuffer.as<EXFAT::exfat_dentry[]>();
+	auto dir = workBuffer.as<EXFAT::exfat_dentry_t[]>();
 	// Volume label entry (no label)
 	dir[0].type = EXFAT_VOLUME;
 	// Bitmap entry
@@ -436,8 +436,8 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	for(unsigned n = 0; n < 2; ++n) {
 		/* Main record (+0) */
 		workBuffer.clear();
-		auto& bpb = workBuffer.as<EXFAT::boot_sector>();
-		bpb = EXFAT::boot_sector{
+		auto& bpb = workBuffer.as<EXFAT::boot_sector_t>();
+		bpb = EXFAT::boot_sector_t{
 			.jmp_boot = {0xEB, 0x76, 0x90},
 			.fs_type = FSTYPE_EXFAT,
 			.partition_offset = b_vol,				// Volume offset in the physical drive [sector]
@@ -461,10 +461,10 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 		// NOTE: vol_flags and percent_in_use NOT included
 		sum = 0;
 		for(unsigned i = 0; i < sectorSize; ++i) {
-			if(i == offsetof(EXFAT::boot_sector, vol_flags) || i == offsetof(EXFAT::boot_sector, vol_flags) + 1) {
+			if(i == offsetof(EXFAT::boot_sector_t, vol_flags) || i == offsetof(EXFAT::boot_sector_t, vol_flags) + 1) {
 				continue;
 			}
-			if(i == offsetof(EXFAT::boot_sector, percent_in_use)) {
+			if(i == offsetof(EXFAT::boot_sector_t, percent_in_use)) {
 				continue;
 			}
 			sum = xsum32(workBuffer[i], sum);
@@ -548,7 +548,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			}
 			sz_fat = (n + sectorSize - 1) / sectorSize;
 			sz_rsv = 1;
-			sz_dir = n_root * sizeof(FAT::msdos_dir_entry) / sectorSize;
+			sz_dir = n_root * sizeof(FAT::msdos_dir_entry_t) / sectorSize;
 		}
 		b_fat = b_vol + sz_rsv;							// FAT base sector
 		LBA_t b_data = b_fat + sz_fat * n_fat + sz_dir; // Data base sector
@@ -639,8 +639,8 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 #endif
 	/* Create FAT VBR */
 	workBuffer.clear();
-	auto& bpb = workBuffer.as<FAT::fat_boot_sector>();
-	bpb = FAT::fat_boot_sector{
+	auto& bpb = workBuffer.as<FAT::fat_boot_sector_t>();
+	bpb = FAT::fat_boot_sector_t{
 		.jmp_boot = {0xEB, 0xFE, 0x90},
 		.system_id = {'M', 'S', 'D', 'O', 'S', '5', '.', '0'},
 		.sector_size = sectorSize,
@@ -689,8 +689,8 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			return IFS::FAT::FR_DISK_ERR;
 		}
 		workBuffer.clear();
-		auto& fsinfo = workBuffer.as<FAT::fat_boot_fsinfo>();
-		fsinfo = FAT::fat_boot_fsinfo{
+		auto& fsinfo = workBuffer.as<FAT::fat_boot_fsinfo_t>();
+		fsinfo = FAT::fat_boot_fsinfo_t{
 			.signature1 = FAT_FSINFO_SIG1,
 			.signature2 = FAT_FSINFO_SIG2,
 			.free_clusters = n_clst - 1,
@@ -781,7 +781,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 	uint8_t fsopt = opt->fmt & (FM_ANY | FM_SFD);
 	unsigned n_fat = (opt->n_fat >= 1 && opt->n_fat <= 2) ? opt->n_fat : 1;
 	unsigned n_root = opt->n_root;
-	if(n_root == 0 || n_root > 0x8000 || (n_root % (sectorSize / sizeof(EXFAT::exfat_dentry))) != 0) {
+	if(n_root == 0 || n_root > 0x8000 || (n_root % (sectorSize / sizeof(EXFAT::exfat_dentry_t))) != 0) {
 		n_root = 512;
 	}
 	uint32_t sz_au = (opt->au_size <= 0x1000000 && (opt->au_size & (opt->au_size - 1)) == 0) ? opt->au_size : 0;
@@ -803,7 +803,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 		if(!READ_SECTORS(workBuffer.get(), 0, 1)) {
 			return IFS::FAT::FR_DISK_ERR;
 		}
-		auto& mbr = *reinterpret_cast<legacy_mbr*>(workBuffer.get());
+		auto& mbr = *reinterpret_cast<legacy_mbr_t*>(workBuffer.get());
 		if(mbr.signature != MSDOS_MBR_SIGNATURE) {
 			return IFS::FAT::FR_MKFS_ABORTED;
 		}
@@ -814,15 +814,15 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 			if(!READ_SECTORS(workBuffer.get(), 1, 1)) {
 				return IFS::FAT::FR_DISK_ERR;
 			}
-			auto& gpt = workBuffer.as<gpt_header>();
+			auto& gpt = workBuffer.as<gpt_header_t>();
 			if(!verifyGptHeader(gpt)) {
 				return IFS::FAT::FR_MKFS_ABORTED;
 			}
 			auto n_ent = gpt.num_partition_entries;
 			auto pt_lba = gpt.partition_entry_lba;
 			unsigned i = 0;
-			auto entries = workBuffer.as<gpt_entry[]>();
-			auto entriesPerSector = sectorSize / sizeof(gpt_entry);
+			auto entries = workBuffer.as<gpt_entry_t[]>();
+			auto entriesPerSector = sectorSize / sizeof(gpt_entry_t);
 			/* Find MS Basic partition with order of ipart */
 			for(unsigned iEntry = 0; iEntry < n_ent; ++iEntry) {
 				if(iEntry % entriesPerSector == 0) {
@@ -872,7 +872,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 				fsopt |= 0x80;
 				b_vol = GPT_ALIGN / sectorSize;
 				// Estimate partition offset and size
-				sz_vol -= 1 + b_vol + GPT_ITEMS * sizeof(gpt_entry) / sectorSize;
+				sz_vol -= 1 + b_vol + GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize;
 			} else
 #endif
 			{
@@ -957,7 +957,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 	if(FF_MULTI_PARTITION && ipart != 0) { /* Volume is in the existing partition */
 		if(!FF_LBA64 || !(fsopt & 0x80)) {
 			/* Update system ID in the partition table (MBR) */
-			auto& mbr = workBuffer.as<legacy_mbr>();
+			auto& mbr = workBuffer.as<legacy_mbr_t>();
 			if(!READ_SECTORS(&mbr, 0, 1)) {
 				return IFS::FAT::FR_DISK_ERR;
 			}

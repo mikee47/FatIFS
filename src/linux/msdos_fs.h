@@ -2,8 +2,6 @@
 #ifndef _UAPI_LINUX_MSDOS_FS_H
 #define _UAPI_LINUX_MSDOS_FS_H
 
-#include <stdint.h>
-
 /*
  * The MS-DOS filesystem constants/structures
  */
@@ -80,7 +78,7 @@
 
 #define FAT_STATE_DIRTY 0x01
 
-struct __attribute__((packed)) fat_boot_sector {
+struct __attribute__((packed)) fat_boot_sector_t {
 	uint8_t jmp_boot[3];  /* Boot strap short or near jump */
 	char system_id[8];	/* Name - can be used to special case partition manager volumes */
 	uint16_t sector_size; /* bytes per logical sector */
@@ -134,9 +132,9 @@ struct __attribute__((packed)) fat_boot_sector {
 	};
 };
 
-static_assert(offsetof(fat_boot_sector, signature) == 510, "Bad fat_boot_sector");
+static_assert(offsetof(fat_boot_sector_t, signature) == 510, "Bad fat_boot_sector_t");
 
-struct fat_boot_fsinfo {
+struct fat_boot_fsinfo_t {
 	uint32_t signature1;	 /* 0x41615252L */
 	uint32_t reserved1[120]; /* Nothing as far as I can tell */
 	uint32_t signature2;	 /* 0x61417272L */
@@ -146,9 +144,9 @@ struct fat_boot_fsinfo {
 	uint16_t signature;
 };
 
-static_assert(offsetof(fat_boot_fsinfo, signature) == 510, "Bad fat_boot_fsinfo");
+static_assert(offsetof(fat_boot_fsinfo_t, signature) == 510, "Bad fat_boot_fsinfo_t");
 
-struct msdos_dir_entry {
+struct msdos_dir_entry_t {
 	uint8_t name[MSDOS_NAME];   /* name and extension */
 	uint8_t attr;				/* attribute bits */
 	uint8_t lcase;				/* Case for base and extension */
@@ -161,10 +159,10 @@ struct msdos_dir_entry {
 	uint32_t size;				/* file size (in bytes) */
 };
 
-static_assert(sizeof(msdos_dir_entry) == 32, "Bad msdos_dir_entry");
+static_assert(sizeof(msdos_dir_entry_t) == 32, "Bad msdos_dir_entry_t");
 
 /* Up to 13 characters of the name */
-struct MsdosDirSlot {
+struct msdos_dir_slot_t {
 	uint8_t id;				/* sequence number for slot */
 	uint8_t name0_4[10];	/* first 5 characters in name */
 	uint8_t attr;			/* attribute byte */

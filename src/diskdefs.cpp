@@ -40,7 +40,7 @@ uint32_t xsum32(const void* buffer, size_t length, uint32_t sum)
 	return sum;
 }
 
-bool verifyGptHeader(gpt_header& gpt)
+bool verifyGptHeader(gpt_header_t& gpt)
 {
 	/* Check signature, version (1.0) and length (92) */
 	if(gpt.signature != GPT_HEADER_SIGNATURE) {
@@ -49,7 +49,7 @@ bool verifyGptHeader(gpt_header& gpt)
 	if(gpt.revision != GPT_HEADER_REVISION_V1) {
 		return false;
 	}
-	if(gpt.header_size != sizeof(gpt_header)) {
+	if(gpt.header_size != sizeof(gpt_header_t)) {
 		return false;
 	}
 
@@ -61,7 +61,7 @@ bool verifyGptHeader(gpt_header& gpt)
 		debug_e("[GPT] bcc 0x%08x, ~bcc 0x%08x, crc32 0x%08x", bcc, ~bcc, crc32_saved);
 		return false;
 	}
-	if(gpt.sizeof_partition_entry != sizeof(gpt_entry)) {
+	if(gpt.sizeof_partition_entry != sizeof(gpt_entry_t)) {
 		return false;
 	}
 	if(gpt.num_partition_entries > 128) {

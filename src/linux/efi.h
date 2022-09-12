@@ -50,7 +50,7 @@ DEFINE_GUID(PARTITION_LINUX_RAID_GUID, 0xa19d880f, 0x05fc, 0x4d3b, 0xa0, 0x06, 0
 DEFINE_GUID(PARTITION_LINUX_SWAP_GUID, 0x0657fd6d, 0xa4ab, 0x43c4, 0x84, 0xe5, 0x09, 0x33, 0xc8, 0x4b, 0x4f, 0x4f)
 DEFINE_GUID(PARTITION_LINUX_LVM_GUID, 0xe6d6d379, 0xf507, 0x44c2, 0xa2, 0x3c, 0x23, 0x8f, 0x2a, 0x3d, 0xf9, 0x28)
 
-struct gpt_header {
+struct gpt_header_t {
 	uint64_t signature;
 	uint32_t revision;
 	uint32_t header_size;
@@ -73,22 +73,22 @@ struct gpt_header {
 	 */
 };
 
-struct gpt_entry_attributes {
+struct gpt_entry_attributes_t {
 	uint64_t required_to_function : 1;
 	uint64_t reserved : 47;
 	uint64_t type_guid_specific : 16;
 };
 
-struct gpt_entry {
+struct gpt_entry_t {
 	efi_guid_t partition_type_guid;
 	efi_guid_t unique_partition_guid;
 	uint64_t starting_lba;
 	uint64_t ending_lba;
-	gpt_entry_attributes attributes;
+	gpt_entry_attributes_t attributes;
 	uint16_t partition_name[72 / sizeof(uint16_t)];
 };
 
-struct __attribute__((packed)) gpt_mbr_record {
+struct __attribute__((packed)) gpt_mbr_record_t {
 	uint8_t boot_indicator; /* unused by EFI, set to 0x80 for bootable */
 	uint8_t start_head;		/* unused by EFI, pt start in CHS */
 	uint8_t start_sector;   /* unused by EFI, pt start in CHS */
@@ -101,11 +101,11 @@ struct __attribute__((packed)) gpt_mbr_record {
 	uint32_t size_in_lba;  /* used by EFI - size of pt in LBA */
 };
 
-struct __attribute__((packed)) legacy_mbr {
+struct __attribute__((packed)) legacy_mbr_t {
 	uint8_t boot_code[440];
 	uint32_t unique_mbr_signature;
 	uint16_t unknown;
-	gpt_mbr_record partition_record[4];
+	gpt_mbr_record_t partition_record[4];
 	uint16_t signature;
 };
 

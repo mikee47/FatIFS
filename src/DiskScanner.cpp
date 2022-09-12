@@ -59,10 +59,10 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return String(buf, outlen);
 }
 
-bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, const gpt_entry* entry = nullptr)
+bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, const gpt_entry_t* entry = nullptr)
 {
-	auto& fat = buffer.as<const FAT::fat_boot_sector>();
-	auto& exfat = buffer.as<const EXFAT::boot_sector>();
+	auto& fat = buffer.as<const FAT::fat_boot_sector_t>();
+	auto& exfat = buffer.as<const EXFAT::boot_sector_t>();
 
 	if(exfat.signature == MSDOS_MBR_SIGNATURE && exfat.fs_type == FSTYPE_EXFAT) {
 		part = {
@@ -160,7 +160,7 @@ bool DiskScanner::next(DiskPartition& part)
 		/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
 
 		// GPT protective MBR?
-		auto& mbr = buffer.as<legacy_mbr>();
+		auto& mbr = buffer.as<legacy_mbr_t>();
 		if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
 			// Load GPT header sector
 			if(!READ_SECTORS(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
@@ -168,7 +168,7 @@ bool DiskScanner::next(DiskPartition& part)
 				state = State::error;
 				return false;
 			}
-			auto& gpt = buffer.as<gpt_header>();
+			auto& gpt = buffer.as<gpt_header_t>();
 			if(!verifyGptHeader(gpt)) {
 				debug_e("[DD] GPT invalid");
 				state = State::error;
@@ -204,7 +204,7 @@ bool DiskScanner::next(DiskPartition& part)
 		}
 
 		if(state == State::GPT) {
-			auto entriesPerSector = sectorSize / sizeof(gpt_entry);
+			auto entriesPerSector = sectorSize / sizeof(gpt_entry_t);
 			if(partitionIndex % entriesPerSector == 0) {
 				if(!READ_SECTORS(buffer.get(), sector++, 1)) {
 					state = State::error;
@@ -212,7 +212,7 @@ bool DiskScanner::next(DiskPartition& part)
 				}
 			}
 
-			auto entries = buffer.as<gpt_entry[]>();
+			auto entries = buffer.as<gpt_entry_t[]>();
 			auto& entry = entries[partitionIndex % entriesPerSector];
 			++partitionIndex;
 			if(entry.partition_type_guid != PARTITION_BASIC_DATA_GUID) {
