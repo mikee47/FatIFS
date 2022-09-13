@@ -23,11 +23,11 @@ public:
 
 	bool begin(uint8_t chipSelect, uint32_t freqLimit = 0);
 
-	bool read(uint64_t address, void* dst, size_t size) override;
+	bool read(storage_size_t address, void* dst, size_t size) override;
 
-	bool write(uint64_t address, const void* src, size_t size) override;
+	bool write(storage_size_t address, const void* src, size_t size) override;
 
-	bool erase_range(uint64_t address, size_t size) override
+	bool erase_range(storage_size_t address, size_t size) override
 	{
 		return false;
 	}
@@ -49,7 +49,7 @@ public:
 		return 1 << sectorSizeBits;
 	}
 
-	uint64_t getSize() const override
+	storage_size_t getSize() const override
 	{
 		return uint64_t(sectorCount) << sectorSizeBits;
 	}

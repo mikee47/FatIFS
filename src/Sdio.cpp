@@ -364,7 +364,7 @@ bool Card::begin(uint8_t chipSelect, uint32_t freqLimit)
 	return initialised;
 }
 
-bool Card::read(uint64_t address, void* dst, size_t size)
+bool Card::read(storage_size_t address, void* dst, size_t size)
 {
 	if(!initialised) {
 		return false;
@@ -401,7 +401,7 @@ bool Card::read(uint64_t address, void* dst, size_t size)
 	return blockCount == 0;
 }
 
-bool Card::write(uint64_t address, const void* src, size_t size)
+bool Card::write(storage_size_t address, const void* src, size_t size)
 {
 	debug_i("[SDIO] write (%llu, %u)", address, size);
 	// m_printHex("READ", src, size);

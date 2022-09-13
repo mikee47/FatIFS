@@ -517,14 +517,14 @@ int FileSystem::eof(FileHandle file)
 	return (pos >= size) ? 1 : 0;
 }
 
-int64_t FileSystem::tell(FileHandle file)
+file_offset_t FileSystem::tell(FileHandle file)
 {
 	GET_FD()
 
 	return fd->fil.fptr;
 }
 
-int FileSystem::ftruncate(FileHandle file, uint64_t new_size)
+int FileSystem::ftruncate(FileHandle file, file_size_t new_size)
 {
 	GET_FD()
 
@@ -579,7 +579,7 @@ int FileSystem::write(FileHandle file, const void* data, size_t size)
 	return res;
 }
 
-int64_t FileSystem::lseek(FileHandle file, int64_t offset, SeekOrigin origin)
+file_offset_t FileSystem::lseek(FileHandle file, file_offset_t offset, SeekOrigin origin)
 {
 	GET_FD()
 
