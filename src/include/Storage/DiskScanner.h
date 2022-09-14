@@ -1,27 +1,11 @@
 #pragma once
 
 #include <Storage/Device.h>
-#include <Data/Uuid.h>
+#include "DiskPart.h"
 #include "WorkBuffer.h"
 
 namespace Storage
 {
-struct DiskPartition {
-	enum class Type {
-		unknown,
-		invalid,
-		fat,
-		fat32,
-		exfat,
-	};
-
-	Type type;
-	uint64_t address;
-	uint64_t size;
-	String name;
-	Uuid guid;
-};
-
 class DiskScanner
 {
 public:
@@ -34,7 +18,7 @@ public:
 		partitionIndex = 0;
 	}
 
-	bool next(DiskPartition& part);
+	bool next(DiskPart& part);
 
 private:
 	enum class State {
@@ -59,5 +43,3 @@ private:
 bool scanDiskPartitions(Device& device);
 
 } // namespace Storage
-
-String toString(Storage::DiskPartition::Type type);

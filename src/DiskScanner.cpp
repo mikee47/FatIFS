@@ -4,25 +4,6 @@
 #include "diskdefs.h"
 #include <Data/Uuid.h>
 
-String toString(Storage::DiskPartition::Type type)
-{
-	using Type = Storage::DiskPartition::Type;
-	switch(type) {
-	case Type::unknown:
-		return F("unknown");
-	case Type::invalid:
-		return F("invalid");
-	case Type::fat:
-		return F("fat");
-	case Type::fat32:
-		return F("fat32");
-	case Type::exfat:
-		return F("exfat");
-	}
-
-	return nullptr;
-}
-
 namespace IFS
 {
 namespace FAT
@@ -59,14 +40,14 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return String(buf, outlen);
 }
 
-bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, const gpt_entry_t* entry = nullptr)
+bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset, const gpt_entry_t* entry = nullptr)
 {
 	auto& fat = buffer.as<const FAT::fat_boot_sector_t>();
 	auto& exfat = buffer.as<const EXFAT::boot_sector_t>();
 
 	if(exfat.signature == MSDOS_MBR_SIGNATURE && exfat.fs_type == FSTYPE_EXFAT) {
 		part = {
-			.type = DiskPartition::Type::exfat,
+			.type = DiskPart::Type::exfat,
 			.address = offset,
 			.size = exfat.vol_length << exfat.sect_size_bits,
 		};
@@ -86,7 +67,7 @@ bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, co
 	if(b == 0xEB || b == 0xE9 || b == 0xE8) {
 		if(fat.signature == MSDOS_MBR_SIGNATURE && fat.fat32.fs_type == FSTYPE_FAT32) {
 			part = {
-				.type = DiskPartition::Type::fat32,
+				.type = DiskPart::Type::fat32,
 				.address = offset,
 				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
 				.name = getLabel(fat.fat32.vol_label, MSDOS_NAME),
@@ -106,7 +87,7 @@ bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, co
 		   && (fat.sectors >= 128 || fat.total_sect >= 0x10000) // Properness of volume sectors (>=128)
 		   && fat.fat_length != 0) {							// Properness of FAT size (MNBZ)
 			part = {
-				.type = DiskPartition::Type::fat,
+				.type = DiskPart::Type::fat,
 				.address = offset,
 				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
 				.name = getLabel(fat.fat16.vol_label, MSDOS_NAME),
@@ -118,13 +99,13 @@ bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, co
 
 	if(fat.signature == MSDOS_MBR_SIGNATURE) {
 		part = {
-			.type = DiskPartition::Type::unknown,
+			.type = DiskPart::Type::unknown,
 		};
 		return false;
 	}
 
 	part = {
-		.type = DiskPartition::Type::invalid,
+		.type = DiskPart::Type::invalid,
 	};
 
 	return true;
@@ -132,7 +113,7 @@ bool identify(DiskPartition& part, const WorkBuffer& buffer, uint64_t offset, co
 
 } // namespace
 
-bool DiskScanner::next(DiskPartition& part)
+bool DiskScanner::next(DiskPart& part)
 {
 	if(state == State::idle) {
 #if FF_MAX_SS != FF_MIN_SS
@@ -240,12 +221,12 @@ bool scanDiskPartitions(Device& device)
 {
 	auto& dev = static_cast<CustomDevice&>(device);
 	DiskScanner scanner(device);
-	DiskPartition part;
+	DiskPart part;
 	while(scanner.next(part)) {
 		switch(part.type) {
-		case DiskPartition::Type::fat:
-		case DiskPartition::Type::fat32:
-		case DiskPartition::Type::exfat:
+		case DiskPart::Type::fat:
+		case DiskPart::Type::fat32:
+		case DiskPart::Type::exfat:
 			dev.createPartition(part.name, Partition::SubType::Data::fat, part.address, part.size);
 		default:; // Ignore
 		}
