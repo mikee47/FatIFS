@@ -278,7 +278,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 
 	uint32_t szb_bit = (n_clst + 7) / 8; // Size of allocation bitmap
 	uint32_t clen[3] = {
-		(szb_bit + sz_au * sectorSize - 1) / (sz_au * sectorSize), // Number of allocation bitmap clusters
+		getBlockCount(szb_bit, sz_au * sectorSize), // Number of allocation bitmap clusters
 	};
 
 	/* Create a compressed up-case table */
