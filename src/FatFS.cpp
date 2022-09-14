@@ -34,19 +34,8 @@ FileSystem* createFatFilesystem(Storage::Partition partition)
 
 bool fatfs_mount()
 {
-	using SubType = Storage::Partition::SubType::Data;
-	for(auto part : Storage::findPartition(Storage::Partition::Type::data)) {
-		switch(SubType(part.subType())) {
-		case SubType::fat:
-		case SubType::fat32:
-		case SubType::exfat:
-			return fatfs_mount(part);
-		default:
-			break;
-		}
-	}
-
-	return false;
+	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
+	return part ? fatfs_mount(part) : false;
 }
 
 bool fatfs_mount(Storage::Partition partition)

@@ -242,22 +242,13 @@ bool scanDiskPartitions(Device& device)
 	DiskScanner scanner(device);
 	DiskPartition part;
 	while(scanner.next(part)) {
-		Partition::SubType::Data subtype;
 		switch(part.type) {
 		case DiskPartition::Type::fat:
-			subtype = Partition::SubType::Data::fat;
-			break;
 		case DiskPartition::Type::fat32:
-			subtype = Partition::SubType::Data::fat32;
-			break;
 		case DiskPartition::Type::exfat:
-			subtype = Partition::SubType::Data::exfat;
-			break;
-		default:
-			continue;
+			dev.createPartition(part.name, Partition::SubType::Data::fat, part.address, part.size);
+		default:; // Ignore
 		}
-
-		dev.createPartition(part.name, subtype, part.address, part.size);
 	}
 
 	return true;
