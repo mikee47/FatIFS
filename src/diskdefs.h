@@ -6,8 +6,8 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <cstring>
 #include <sys/pgmspace.h>
+#include <Data/Uuid.h>
 
 #define FSTYPE_FAT 0x2020202020544146ULL   // "FAT     " 46 41 54 20 20 20 20 20
 #define FSTYPE_FAT32 0x2020203233544146ULL // "FAT32   " 46 41 54 33 32 20 20 20

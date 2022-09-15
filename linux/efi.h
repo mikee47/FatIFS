@@ -22,25 +22,9 @@
 #define GPT_HEADER_REVISION_V1 0x00010000
 #define GPT_PRIMARY_PARTITION_TABLE_LBA 1
 
-struct guid_t {
-	uint8_t b[16];
+using efi_guid_t = Uuid;
 
-	bool operator==(const guid_t& other) const
-	{
-		return memcmp(b, other.b, sizeof(b)) == 0;
-	}
-
-	bool operator!=(const guid_t& other) const
-	{
-		return !operator==(other);
-	}
-};
-
-using efi_guid_t = guid_t;
-
-#define DEFINE_GUID(name, a, b, c, d...)                                                                               \
-	static const efi_guid_t name PROGMEM = {{(a)&0xff, ((a) >> 8) & 0xff, ((a) >> 16) & 0xff, ((a) >> 24) & 0xff,      \
-											 (b)&0xff, ((b) >> 8) & 0xff, (c)&0xff, ((c) >> 8) & 0xff, d}};
+#define DEFINE_GUID(name, a, b, c, d...) static constexpr efi_guid_t name PROGMEM{a, b, c, d};
 
 DEFINE_GUID(PARTITION_SYSTEM_GUID, 0xC12A7328, 0xF81F, 0x11d2, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B)
 DEFINE_GUID(LEGACY_MBR_PARTITION_GUID, 0x024DEE41, 0x33E7, 0x11d3, 0x9D, 0x69, 0x00, 0x08, 0xC7, 0x81, 0xF3, 0x9F)
