@@ -9,6 +9,7 @@ Descr: Low-level SDCard functions
 
 #include <Storage/Device.h>
 #include <SPIBase.h>
+#include "mmc.h"
 
 namespace Storage
 {
@@ -21,7 +22,31 @@ public:
 	{
 	}
 
-	bool begin(uint8_t chipSelect, uint32_t freqLimit = 0);
+	/**
+	 * @brief Initialise the card
+	 * @param chipSelect
+	 * @param freq SPI frequency in Hz, use 0 for maximum supported frequency
+	 */
+	bool begin(uint8_t chipSelect, uint32_t freq = 0);
+
+	bool read_cid(cid_t& cid);
+
+	/* Storage Device methods */
+
+	String getName() const override
+	{
+		return F("SDCard");
+	}
+
+	uint32_t getId() const
+	{
+		return 0;
+	}
+
+	Type getType() const
+	{
+		return Type::sdcard;
+	}
 
 	bool read(storage_size_t address, void* dst, size_t size) override;
 
@@ -32,17 +57,7 @@ public:
 		return false;
 	}
 
-	bool sync();
-
-	String getName() const override
-	{
-		return F("SDCard");
-	}
-
-	Type getType() const
-	{
-		return Type::sdcard;
-	}
+	bool sync() override;
 
 	size_t getBlockSize() const override
 	{

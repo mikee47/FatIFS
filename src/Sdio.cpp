@@ -234,7 +234,7 @@ uint8_t Card::send_cmd(uint8_t cmd, uint32_t arg)
 	return d; /* Return with the response value */
 }
 
-bool Card::begin(uint8_t chipSelect, uint32_t freqLimit)
+bool Card::begin(uint8_t chipSelect, uint32_t freq)
 {
 	if(initialised) {
 		return false;
@@ -251,7 +251,9 @@ bool Card::begin(uint8_t chipSelect, uint32_t freqLimit)
 	}
 
 	const uint32_t maxFreq{40000000U};
-	auto freq = (freqLimit > 0) && (freqLimit < maxFreq) ? freqLimit : maxFreq;
+	if(freq == 0 || freq > maxFreq) {
+		freq = maxFreq;
+	}
 	SPISettings settings(freq, MSBFIRST, SPI_MODE0);
 	spi.beginTransaction(settings);
 
@@ -329,10 +331,10 @@ bool Card::begin(uint8_t chipSelect, uint32_t freqLimit)
 		debug_e("SDCard ERROR: %x", retCmd);
 	}
 
+	// Get number of sectors on the disk (uint32_t)
 	if(ty != 0) {
-		// Get number of sectors on the disk (uint32_t)
 		uint8_t csd[16];
-		if(send_cmd(CMD9, 0) == 0 && rcvr_datablock(csd, 16)) {
+		if(send_cmd(CMD9, 0) == 0 && rcvr_datablock(csd, sizeof(csd))) {
 			if((csd[0] >> 6) == 1) { /* SDC ver 2.00 */
 				uint32_t cs = csd[9] + (uint16_t(csd[8]) << 8) + (uint32_t(csd[7] & 63) << 16) + 1;
 				sectorCount = cs << 10;
@@ -463,6 +465,28 @@ bool Card::sync()
 	bool res = select();
 	deselect();
 	return res;
+}
+
+bool Card::read_cid(cid_t& cid)
+{
+	if(!initialised) {
+		return false;
+	}
+
+	if(!select()) {
+		return false;
+	}
+
+	bool res = send_cmd(CMD10, 0) == 0 && rcvr_datablock(&cid, sizeof(cid));
+
+	deselect();
+
+	if(!res) {
+		return false;
+	}
+
+	cid.bswap();
+	return true;
 }
 
 } // namespace SDIO
