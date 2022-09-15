@@ -4,6 +4,7 @@
 #include <IFS/Debug.h>
 #include <IFS/FileSystem.h>
 #include <Storage/FileDevice.h>
+#include <Storage/DiskDevice.h>
 #include <Storage/DiskScanner.h>
 #include <Storage/Debug.h>
 #include <Storage/Sdio.h>
@@ -64,6 +65,12 @@ void mountTestImage(const String& tag, const String& filename)
 	}
 	auto dev = new Storage::FileDevice(tag, hfs, f);
 	Storage::registerDevice(dev);
+
+	Storage::DiskScanner scanner(*dev);
+	for(Storage::DiskPart dp; scanner.next(dp);) {
+		Serial << dp;
+	}
+
 	Storage::scanDiskPartitions(*dev);
 
 	auto part = *dev->partitions().begin();
@@ -158,9 +165,10 @@ Storage::Partition sdinit()
 
 void fsinit()
 {
-#ifdef ARCH_HOST
+#ifdef ARCH_HOSTxx
 	DEFINE_FSTR(test_image, "test")
 	mountTestImage("TEST", test_image);
+	return;
 #endif
 
 	auto part = sdinit();
@@ -175,17 +183,17 @@ void fsinit()
 	int err = fs->mount();
 	if(err == FS_OK) {
 		fileSetFileSystem(fs);
-		// } else if(err == IFS::Error::BadFileSystem) {
-		// 	debug_i("Formatting disk");
-		// 	err = fs->format();
-		// 	debug_i("format: %s", fs->getErrorString(err).c_str());
-		// 	if(!fileMountFileSystem(fs)) {
-		// 		debug_e("Mount failed");
-		// 		delete fs;
-		// 		return;
-		// 	}
+	} else if(err == IFS::Error::BadFileSystem) {
+		debug_i("Formatting disk");
+		err = fs->format();
+		f_mkfs
+		debug_i("format: %s", fs->getErrorString(err).c_str());
+		if(!fileMountFileSystem(fs)) {
+			debug_e("Mount failed");
+			return;
+		}
 
-		// fscopy("fwfs1.bin");
+		fscopy("fwfs1.bin");
 
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
 		debug_i("fileSetContent(): %s", fileGetErrorString(err).c_str());
@@ -214,7 +222,7 @@ void fsinit()
 #endif
 
 #else
-	listDirectoryAsync(fs, path);
+	// listDirectoryAsync(fs, path);
 #endif
 }
 

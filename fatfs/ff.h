@@ -355,13 +355,6 @@ int ff_del_syncobj (FF_SYNC_t sobj);	/* Delete a sync object */
 /* Fast seek controls (2nd argument of f_lseek) */
 #define CREATE_LINKMAP	((FSIZE_t)0 - 1)
 
-/* Format options (2nd argument of f_mkfs) */
-#define FM_FAT		0x01
-#define FM_FAT32	0x02
-#define FM_EXFAT	0x04
-#define FM_ANY		0x07
-#define FM_SFD		0x08
-
 /* Filesystem type (FATFS.fs_type) */
 #define FS_FAT12	1
 #define FS_FAT16	2
