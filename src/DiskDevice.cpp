@@ -355,7 +355,8 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	device.trim(volumeStartSector, volumeSectorCount);
 #endif
 	/* Determine FAT location, data location and number of clusters */
-	if(sectorsPerCluster == 0) { /* AU auto-selection */
+	if(sectorsPerCluster == 0) {
+		// Auto-select cluster size
 		if(volumeSectorCount >= 64 * 1024 * 1024) {
 			sectorsPerCluster = 256;
 		} else if(volumeSectorCount >= 512 * 1024) {
@@ -541,7 +542,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 		}
 		/* Fill sum record (+11) with checksum value */
 		auto sumRecord = workBuffer.as<uint32_t[]>();
-		std::fill_n(sumRecord, sectorSize / sizeof(uint32_t), sum);
+		std::fill_n(sumRecord, sectorSize / sizeof(sum), sum);
 		if(!WRITE_SECTORS(sumRecord, sect++, 1)) {
 			return IFS::FAT::FR_DISK_ERR;
 		}
@@ -556,66 +557,71 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 						LBA_t volumeSectorCount, uint32_t sectorsPerCluster, uint32_t sectorsPerBlock, uint32_t vsn,
 						int fsty, const bool allowFat32, const unsigned numRootEntries, const uint8_t numFats)
 {
-	uint32_t pau;			// Physical Allocation Unit
-	uint32_t numClusters;   // Number of clusters
-	uint32_t numFatSectors; // FAT size [sector]
-	uint32_t sz_rsv;		// Number of reserved sectors
-	uint32_t sz_dir;		// Root dir size [sector]
+	auto getAllocationUnitSize = [](const uint16_t cst[], uint32_t count) -> unsigned {
+		unsigned pau = 1;
+		for(unsigned i = 0; cst[i] != 0 && cst[i] <= count; ++i) {
+			pau <<= 1;
+		}
+		return pau;
+	};
+
+	uint32_t pau;				 // Physical Allocation Unit
+	uint32_t numClusters;		 // Number of clusters
+	uint32_t numFatSectors;		 // FAT size [sector]
+	uint32_t numReservedSectors; // Number of reserved sectors
+	uint32_t numRootDirSectors;  // Root dir size [sector]
 	LBA_t fatStartSector;
 	do {
 		pau = sectorsPerCluster;
 		/* Pre-determine number of clusters and FAT sub-type */
 		if(fsty == FS_FAT32) {
-			/* FAT32 volume */
 			if(pau == 0) {
 				// Determine allocation unit size from Volume size, in unit of 128K
-				auto n = volumeSectorCount / 0x20000;
 				static const uint16_t cst[] = {1, 2, 4, 8, 16, 32, 0};
-				for(unsigned i = 0, pau = 1; cst[i] != 0 && cst[i] <= n; ++i, pau <<= 1) {
-				}
+				pau = getAllocationUnitSize(cst, volumeSectorCount / (128 * 1024));
 			}
 			numClusters = volumeSectorCount / pau;
 			numFatSectors = getBlockCount((2 + numClusters) * sizeof(uint32_t), sectorSize);
-			sz_rsv = 32;
-			sz_dir = 0; // No static directory
+			numReservedSectors = 32;
+			numRootDirSectors = 0; // No static directory
 			if(numClusters <= MAX_FAT16 || numClusters > MAX_FAT32) {
 				return IFS::FAT::FR_MKFS_ABORTED;
 			}
 		} else {
 			/* FAT volume */
-			uint32_t n; // FAT size [byte]
 			if(pau == 0) {
 				// Determine allocation unit size from volume size, in units of 4K
-				n = volumeSectorCount / 0x1000;
-				static const uint16_t cst[] = {1, 4, 16, 64, 256, 512, 0};
-				for(unsigned i = 0, pau = 1; cst[i] != 0 && cst[i] <= n; ++i, pau <<= 1) {
-				}
+				static const uint16_t cst[] = {1, 4, 16, 64, 256, 512};
+				pau = getAllocationUnitSize(cst, volumeSectorCount / (4 * 1024));
 			}
 			numClusters = volumeSectorCount / pau;
+			uint32_t n;
 			if(numClusters > MAX_FAT12) {
-				n = numClusters * 2 + 4;
+				n = (2 + numClusters) * 2;
 			} else {
 				fsty = FS_FAT12;
-				n = (numClusters * 3 + 1) / 2 + 3;
+				n = ((2 + numClusters) * 3 + 1) / 2;
 			}
-			numFatSectors = (n + sectorSize - 1) / sectorSize;
-			sz_rsv = 1;
-			sz_dir = numRootEntries * sizeof(FAT::msdos_dir_entry_t) / sectorSize;
+			numFatSectors = getBlockCount(n, sectorSize);
+			numReservedSectors = 1;
+			numRootDirSectors = numRootEntries * sizeof(FAT::msdos_dir_entry_t) / sectorSize;
 		}
-		fatStartSector = volumeStartSector + sz_rsv;							   // FAT base sector
-		LBA_t dataStartSector = fatStartSector + numFatSectors * numFats + sz_dir; // Data base sector
+		fatStartSector = volumeStartSector + numReservedSectors;							  // FAT base sector
+		LBA_t dataStartSector = fatStartSector + numFatSectors * numFats + numRootDirSectors; // Data base sector
 
 		/* Align data area to erase block boundary (for flash memory media) */
 		uint32_t n = align_up(dataStartSector, sectorsPerBlock) -
 					 dataStartSector; // Sectors to next nearest from current data base
-		if(fsty == FS_FAT32) {		  /* FAT32: Move FAT */
-			sz_rsv += n;
+		if(fsty == FS_FAT32) {
+			// Move FAT
+			numReservedSectors += n;
 			fatStartSector += n;
-		} else { /* FAT: Expand FAT */
+		} else {
+			// Expand FAT
 			if(n % numFats != 0) {
 				// Adjust fractional error
 				--n;
-				++sz_rsv;
+				++numReservedSectors;
 				++fatStartSector;
 			}
 			numFatSectors += n / numFats;
@@ -626,7 +632,8 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			// Volume too small
 			return IFS::FAT::FR_MKFS_ABORTED;
 		}
-		numClusters = (volumeSectorCount - sz_rsv - numFatSectors * numFats - sz_dir) / pau;
+
+		numClusters = (volumeSectorCount - numReservedSectors - numFatSectors * numFats - numRootDirSectors) / pau;
 		if(fsty == FS_FAT32) {
 			if(numClusters <= MAX_FAT16) {
 				// Too few clusters for FAT32
@@ -698,7 +705,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		.system_id = {'M', 'S', 'D', 'O', 'S', '5', '.', '0'},
 		.sector_size = sectorSize,
 		.sec_per_clus = uint8_t(pau),
-		.reserved = uint16_t(sz_rsv),
+		.reserved = uint16_t(numReservedSectors),
 		.num_fats = uint8_t(numFats),
 		.dir_entries = uint16_t((fsty == FS_FAT32) ? 0 : numRootEntries),
 		.sectors = uint16_t((volumeSectorCount < 0x10000) ? volumeSectorCount : 0), // Volume size in 16-bit LBA
@@ -789,7 +796,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 	}
 
 	/* Initialize root directory (fill with zero) */
-	for(auto nsect = (fsty == FS_FAT32) ? pau : sz_dir; nsect != 0;) {
+	for(auto nsect = (fsty == FS_FAT32) ? pau : numRootDirSectors; nsect != 0;) {
 		auto n = std::min(nsect, workBuffer.sectors());
 		if(!WRITE_SECTORS(workBuffer.get(), sect, n)) {
 			return IFS::FAT::FR_DISK_ERR;
