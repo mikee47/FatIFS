@@ -269,56 +269,18 @@ FRESULT create_partition(Device& device,
 }
 
 #ifdef ENABLE_EXFAT
-FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t volumeStartSector,
-						  LBA_t volumeSectorCount, uint32_t sectorsPerCluster, uint32_t sectorsPerBlock, uint32_t vsn)
+/*
+ * Create a compressed up-case table
+ */
+FRESULT createUpcaseTable(Device& device, LBA_t sect, unsigned sectorSize, uint32_t& szb_case, uint32_t& sum,
+						  WorkBuffer& workBuffer)
 {
-	if(volumeSectorCount < 0x1000) {
-		// Volume too small for exFAT
-		return IFS::FAT::FR_MKFS_ABORTED;
-	}
-#if FF_USE_TRIM
-	// Inform storage device that the volume area may be erased
-	device.trim(volumeStartSector, volumeSectorCount);
-#endif
-	/* Determine FAT location, data location and number of clusters */
-	if(sectorsPerCluster == 0) { /* AU auto-selection */
-		if(volumeSectorCount >= 64 * 1024 * 1024) {
-			sectorsPerCluster = 256;
-		} else if(volumeSectorCount >= 512 * 1024) {
-			sectorsPerCluster = 64;
-		} else {
-			sectorsPerCluster = 8;
-		}
-	}
-	const LBA_t fatStartSector = volumeStartSector + 32;
-	const uint32_t numFatSectors =
-		getBlockCount((volumeSectorCount / sectorsPerCluster + 2) * sizeof(uint32_t), sectorSize);
-	const LBA_t dataStartSector = align_up(fatStartSector + numFatSectors, sectorsPerBlock);
-	if(dataStartSector - volumeStartSector >= volumeSectorCount / 2) {
-		// Volume too small
-		return IFS::FAT::FR_MKFS_ABORTED;
-	}
-	const uint32_t numClusters = (volumeSectorCount - (dataStartSector - volumeStartSector)) / sectorsPerCluster;
-	if(numClusters < 16 || numClusters > MAX_EXFAT) {
-		// Too few/many clusters
-		return IFS::FAT::FR_MKFS_ABORTED;
-	}
-
-	const uint32_t bitmapSize = (numClusters + 7) / 8; // Size of allocation bitmap
-
-	// bitmap, upcaseTable, rootDir
-	uint32_t clusterLengths[3] = {
-		getBlockCount(bitmapSize, sectorsPerCluster * sectorSize), // Number of allocation bitmap clusters
-	};
-
-	/* Create a compressed up-case table */
-	LBA_t sect = dataStartSector + sectorsPerCluster * clusterLengths[0]; // Table start sector
-	uint32_t sum = 0;													  // Table checksum to be stored in the 82 entry
+	szb_case = 0;
+	sum = 0; // Table checksum to be stored in the 82 entry
 	unsigned st = 0;
 	IFS::FAT::WCHAR si = 0;
 	unsigned sectorOffset = 0;
 	unsigned j = 0;
-	uint32_t szb_case = 0;
 	do {
 		IFS::FAT::WCHAR ch;
 		switch(st) {
@@ -377,6 +339,61 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 			sectorOffset = 0;
 		}
 	} while(si != 0);
+
+	return IFS::FAT::FR_OK;
+}
+
+FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t volumeStartSector,
+						  LBA_t volumeSectorCount, uint32_t sectorsPerCluster, uint32_t sectorsPerBlock, uint32_t vsn)
+{
+	if(volumeSectorCount < 0x1000) {
+		// Volume too small for exFAT
+		return IFS::FAT::FR_MKFS_ABORTED;
+	}
+#if FF_USE_TRIM
+	// Inform storage device that the volume area may be erased
+	device.trim(volumeStartSector, volumeSectorCount);
+#endif
+	/* Determine FAT location, data location and number of clusters */
+	if(sectorsPerCluster == 0) { /* AU auto-selection */
+		if(volumeSectorCount >= 64 * 1024 * 1024) {
+			sectorsPerCluster = 256;
+		} else if(volumeSectorCount >= 512 * 1024) {
+			sectorsPerCluster = 64;
+		} else {
+			sectorsPerCluster = 8;
+		}
+	}
+	const LBA_t fatStartSector = volumeStartSector + 32;
+	const uint32_t numFatSectors =
+		getBlockCount((volumeSectorCount / sectorsPerCluster + 2) * sizeof(uint32_t), sectorSize);
+	const LBA_t dataStartSector = align_up(fatStartSector + numFatSectors, sectorsPerBlock);
+	if(dataStartSector - volumeStartSector >= volumeSectorCount / 2) {
+		// Volume too small
+		return IFS::FAT::FR_MKFS_ABORTED;
+	}
+	const uint32_t numClusters = (volumeSectorCount - (dataStartSector - volumeStartSector)) / sectorsPerCluster;
+	if(numClusters < 16 || numClusters > MAX_EXFAT) {
+		// Too few/many clusters
+		return IFS::FAT::FR_MKFS_ABORTED;
+	}
+
+	const uint32_t bitmapSize = (numClusters + 7) / 8; // Size of allocation bitmap
+
+	// bitmap, upcaseTable, rootDir
+	uint32_t clusterLengths[3] = {
+		getBlockCount(bitmapSize, sectorsPerCluster * sectorSize), // Number of allocation bitmap clusters
+	};
+
+	/* Create a compressed up-case table */
+	uint32_t szb_case;
+	uint32_t sum_case;
+	LBA_t sect = dataStartSector + sectorsPerCluster * clusterLengths[0]; // Table start sector
+	FRESULT fr = createUpcaseTable(device, sect, sectorSize, szb_case, sum_case, workBuffer);
+	if(fr) {
+		return fr;
+	}
+
 	clusterLengths[1] = getBlockCount(szb_case, sectorsPerCluster * sectorSize); // Number of up-case table clusters
 	clusterLengths[2] = 1;														 // Number of root dir clusters
 
@@ -404,7 +421,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	/* Initialize the FAT */
 	sect = fatStartSector;
 	nsect = numFatSectors; /* Start of FAT and number of FAT sectors */
-	j = 0;
+	unsigned chainIndex{0};
 	nbit = 0;
 	uint32_t clu = 0;
 	do {
@@ -421,8 +438,8 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 			for(; nbit != 0 && clu < clusterCount; ++clu, --nbit) {
 				fat[clu] = (nbit > 1) ? clu + 1 : 0xFFFFFFFF;
 			}
-			if(nbit == 0 && j < 3) {
-				nbit = clusterLengths[j++]; // Next chain length
+			if(nbit == 0 && chainIndex < 3) {
+				nbit = clusterLengths[chainIndex++]; // Next chain length
 			}
 		} while(nbit != 0 && clu < clusterCount);
 		auto n = std::min(nsect, workBuffer.sectors());
@@ -444,7 +461,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	dir[1].bitmap.size = bitmapSize;
 	// Up-case table entry
 	dir[2].type = EXFAT_UPCASE;
-	dir[2].upcase.checksum = sum;
+	dir[2].upcase.checksum = sum_case;
 	dir[2].upcase.start_clu = 2 + clusterLengths[0];
 	dir[2].upcase.size = szb_case;
 
@@ -489,7 +506,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 
 		// Calculate VBR checksum
 		// NOTE: vol_flags and percent_in_use NOT included
-		sum = 0;
+		uint32_t sum = 0;
 		for(unsigned i = 0; i < sectorSize; ++i) {
 			if(i == offsetof(EXFAT::boot_sector_t, vol_flags) || i == offsetof(EXFAT::boot_sector_t, vol_flags) + 1) {
 				continue;
@@ -505,7 +522,8 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 		/* Extended bootstrap record (+1..+8) */
 		workBuffer.clear();
 		bpb.signature = BOOT_SIGNATURE;
-		for(j = 1; j < 9; ++j) {
+		unsigned sectorIndex = 1;
+		for(; sectorIndex < 9; ++sectorIndex) {
 			sum = xsum32(&bpb, sectorSize, sum);
 			if(!WRITE_SECTORS(&bpb, sect++, 1)) {
 				return IFS::FAT::FR_DISK_ERR;
@@ -513,7 +531,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 		}
 		/* OEM/Reserved record (+9..+10) */
 		workBuffer.clear();
-		for(; j < 11; j++) {
+		for(; sectorIndex < 11; sectorIndex++) {
 			sum = xsum32(workBuffer.get(), sectorSize, sum);
 			if(!WRITE_SECTORS(workBuffer.get(), sect++, 1)) {
 				return IFS::FAT::FR_DISK_ERR;
