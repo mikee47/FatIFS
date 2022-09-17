@@ -34,17 +34,6 @@ using namespace diskdefs;
 using LBA_t = IFS::FAT::LBA_t;
 using FRESULT = IFS::FAT::FRESULT;
 
-struct FatParam {
-	LBA_t volumeStartSector;
-	LBA_t volumeSectorCount;
-	uint32_t sectorsPerCluster; ///< Set to 0 for auto-calculation
-	uint32_t sectorsPerBlock;   ///< Flash erase block size
-	uint32_t volumeSerialNumber;
-	DiskPart::Type type;
-	unsigned numRootEntries;
-	uint8_t numFats;
-};
-
 /* Find an FAT volume */
 /* (It supports only generic partitioning rules, MBR, GPT and SFD) */
 
@@ -56,14 +45,13 @@ struct FatParam {
 /* Create partitions in GPT format */
 FRESULT create_partition_gpt(Device& device, unsigned sectorSize,
 							 const LBA_t plst[], // Partition list
-							 uint8_t sys,		 // System ID (for only MBR, temp setting)
 							 WorkBuffer& workBuffer)
 {
 	auto driveSectors = device.getSectorCount();
 	auto partAlignSectors = GPT_ALIGN / sectorSize; // Partition alignment for GPT [sector]
 	auto numPartitionTableSectors = GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize; // Size of partition table [sector]
 	uint64_t backupPartitionTableSector =
-		driveSectors - numPartitionTableSectors - 1;					   // Backup partiiton table start sector
+		driveSectors - numPartitionTableSectors - 1;					   // Backup partition table start sector
 	uint64_t nextAllocatableSector = 2 + numPartitionTableSectors;		   // First allocatable sector
 	uint64_t sz_pool = backupPartitionTableSector - nextAllocatableSector; // Size of allocatable area
 	uint32_t bcc = 0;													   // Cumulative partition entry checksum
@@ -181,75 +169,79 @@ FRESULT create_partition_gpt(Device& device, unsigned sectorSize,
 /* Create partitions in MBR format */
 FRESULT create_partition_mbr(Device& device, unsigned sectorSize,
 							 const LBA_t plst[], // Partition list
-							 uint8_t sys,		 // System ID (for only MBR, temp setting)
-							 WorkBuffer& workBuffer)
+							 DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
 {
-	uint32_t sz_drv32 = device.getSectorCount();
+	uint32_t numDeviceSectors = device.getSectorCount();
 	// Determine drive CHS without any consideration of the drive geometry
-	uint8_t n_sc = N_SEC_TRACK;
-	uint8_t n_hd;
-	for(n_hd = 8; n_hd != 0 && sz_drv32 / (n_hd * n_sc) > 1024; n_hd *= 2) {
+	constexpr uint8_t sectorsPerTrack = N_SEC_TRACK;
+	uint8_t numHeads;
+	for(numHeads = 8; numHeads != 0 && numDeviceSectors / (numHeads * sectorsPerTrack) > 1024; numHeads *= 2) {
 	}
-	if(n_hd == 0) {
+	if(numHeads == 0) {
 		// Number of heads needs to be < 256
-		n_hd = 255;
+		numHeads = 255;
 	}
 
 	workBuffer.clear();
 	auto& mbr = workBuffer.as<legacy_mbr_t>();
 
-	unsigned i;
-	uint32_t nxt_alloc32;
-	for(i = 0, nxt_alloc32 = n_sc; i < 4 && nxt_alloc32 != 0 && nxt_alloc32 < sz_drv32; ++i) {
-		uint32_t sz_part32 = plst[i]; /* Get partition size */
-		if(sz_part32 <= 100) {
-			// Size in percentage
-			sz_part32 = (sz_part32 == 100) ? sz_drv32 : sz_drv32 / 100 * sz_part32;
+	uint32_t sect = sectorsPerTrack;
+	for(unsigned i = 0; i < 4 && sect != 0 && sect < numDeviceSectors; ++i) {
+		uint32_t numPartSectors = plst[i]; // Get partition size
+		if(numPartSectors <= 100) {
+			// Size as percentage
+			numPartSectors = (numPartSectors == 100) ? numDeviceSectors : numPartSectors * (numDeviceSectors / 100);
 		}
-		if(nxt_alloc32 + sz_part32 > sz_drv32 || nxt_alloc32 + sz_part32 < nxt_alloc32) {
+		if(sect + numPartSectors > numDeviceSectors || sect + numPartSectors < sect) {
 			// Clip at drive size
-			sz_part32 = sz_drv32 - nxt_alloc32;
+			numPartSectors = numDeviceSectors - sect;
 		}
-		if(sz_part32 == 0) {
+		if(numPartSectors == 0) {
 			// End of table or no sector to allocate
 			break;
 		}
 
-		auto pte = &mbr.partition_record[i];
+		struct CHS {
+			uint8_t head;
+			uint8_t sector;
+			uint8_t track;
+		};
 
-		pte->starting_lba = nxt_alloc32;
-		pte->size_in_lba = sz_part32;
-		pte->os_type = sys;
+		auto calc_CHS = [&](uint32_t sect) -> CHS {
+			unsigned tracks = sect / sectorsPerTrack;
+			uint8_t sec = 1 + (sect % sectorsPerTrack);
+			unsigned cyl = tracks / numHeads;
+			uint8_t head = tracks % numHeads;
+			sec |= (cyl >> 2) & 0xC0;
+			return CHS{head, sec, uint8_t(cyl)};
+		};
 
-		// Start CHS
-		unsigned cy = nxt_alloc32 / n_sc / n_hd;	 // cylinder
-		pte->start_head = nxt_alloc32 / n_sc % n_hd; // head
-		uint8_t sc = nxt_alloc32 % n_sc + 1;		 // sector
-		pte->start_sector = (cy >> 2 & 0xC0) | sc;
-		pte->start_track = cy;
-		// End CHS
-		cy = (nxt_alloc32 + sz_part32 - 1) / n_sc / n_hd;			 // cylinder
-		pte->end_head = (nxt_alloc32 + sz_part32 - 1) / n_sc % n_hd; // head
-		sc = (nxt_alloc32 + sz_part32 - 1) % n_sc + 1;				 // sector
-		pte->end_sector = (cy >> 2 & 0xC0) | sc;
-		pte->end_track = cy;
+		auto start = calc_CHS(sect);
+		auto end = calc_CHS(sect + numPartSectors - 1);
 
-		nxt_alloc32 += sz_part32;
+		mbr.partition_record[i] = gpt_mbr_record_t{
+			.start_head = start.head,
+			.start_sector = start.sector,
+			.start_track = start.track,
+			.os_type = sys,
+			.end_head = end.head,
+			.end_sector = end.sector,
+			.end_track = end.track,
+			.starting_lba = sect,
+			.size_in_lba = numPartSectors,
+		};
+
+		sect += numPartSectors;
 	}
 
 	mbr.signature = MSDOS_MBR_SIGNATURE;
-	if(!WRITE_SECTORS(&mbr, 0, 1)) {
-		return IFS::FAT::FR_DISK_ERR;
-	}
-
-	return IFS::FAT::FR_OK;
+	return WRITE_SECTORS(&mbr, 0, 1) ? IFS::FAT::FR_OK : IFS::FAT::FR_DISK_ERR;
 }
 
 /* Create partitions on the physical drive in format of MBR or GPT */
 FRESULT create_partition(Device& device,
 						 const LBA_t plst[], // Partition list
-						 uint8_t sys,		 // System ID (for only MBR, temp setting)
-						 WorkBuffer& workBuffer)
+						 DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
 {
 	/* Get physical drive size */
 	LBA_t driveSectors = device.getSectorCount();
@@ -264,7 +256,7 @@ FRESULT create_partition(Device& device,
 
 #if FF_LBA64
 	if(driveSectors >= FF_MIN_GPT) {
-		return create_partition_gpt(device, sectorSize, plst, sys, workBuffer);
+		return create_partition_gpt(device, sectorSize, plst, workBuffer);
 	}
 #endif
 
@@ -821,6 +813,9 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 
 FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 {
+#define FF_MULTI_PARTITION 1
+	uint8_t ipart = 1;
+
 	/* Get physical drive status (sz_drv, sectorsPerBlock, sectorSize) */
 	uint16_t sectorSize;
 #if FF_MAX_SS != FF_MIN_SS
@@ -1004,20 +999,20 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 	/* A FAT volume has been created here */
 
 	/* Determine system ID in the MBR partition table */
-	uint8_t sys;
+	DiskPart::SysIndicator sys;
 	if(param.type == DiskPart::Type::exfat) {
 		// exFAT
-		sys = 0x07;
+		sys = DiskPart::SI_EXFAT;
 	} else if(param.type == DiskPart::Type::fat32) {
 		// FAT32X
-		sys = 0x0C;
+		sys = DiskPart::SI_FAT32X;
 	} else if(param.volumeSectorCount >= 0x10000) {
 		// FAT12/16 (large)
-		sys = 0x06;
+		sys = DiskPart::SI_FAT16B;
 	} else if(param.type == DiskPart::Type::fat16) {
-		sys = 0x04;
+		sys = DiskPart::SI_FAT16;
 	} else {
-		sys = 0x01;
+		sys = DiskPart::SI_FAT12;
 	}
 
 	/* Update partition information */
