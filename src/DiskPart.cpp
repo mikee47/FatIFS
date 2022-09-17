@@ -8,8 +8,10 @@ String toString(Storage::DiskPart::Type type)
 		return F("unknown");
 	case Type::invalid:
 		return F("invalid");
-	case Type::fat:
-		return F("fat");
+	case Type::fat12:
+		return F("fat12");
+	case Type::fat16:
+		return F("fat16");
 	case Type::fat32:
 		return F("fat32");
 	case Type::exfat:
