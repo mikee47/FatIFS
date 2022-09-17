@@ -184,15 +184,6 @@
 */
 
 
-#define FF_MULTI_PARTITION	0
-/* This option switches support for multiple volumes on the physical drive.
-/  By default (0), each logical drive number is bound to the same physical drive
-/  number and only an FAT volume found on the physical drive will be mounted.
-/  When this function is enabled (1), each logical drive number can be bound to
-/  arbitrary physical drive and partition listed in the VolToPart[]. Also f_fdisk()
-/  funciton will be available. */
-
-
 #define FF_MIN_SS		512
 #define FF_MAX_SS		512
 /* This set of options configures the range of sector size to be supported. (512,
@@ -210,11 +201,6 @@
 #endif
 /* This option switches support for 64-bit LBA. (0:Disable or 1:Enable)
 /  To enable the 64-bit LBA, also exFAT needs to be enabled. (FF_FS_EXFAT == 1) */
-
-
-#define FF_MIN_GPT		0x10000000
-/* Minimum number of sectors to switch GPT as partitioning format in f_mkfs and
-/  f_fdisk function. 0x100000000 max. This option has no effect when FF_LBA64 == 0. */
 
 
 #define FF_USE_TRIM		1

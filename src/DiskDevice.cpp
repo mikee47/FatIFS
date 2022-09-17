@@ -18,6 +18,13 @@ namespace FAT
 } // namespace FAT
 } // namespace IFS
 
+// Minimum number of sectors to switch GPT as partitioning format
+#define FF_MIN_GPT 0x10000000
+
+#if FF_MIN_GPT > 0x100000000
+#error Wrong FF_MIN_GPT setting
+#endif
+
 namespace Storage
 {
 namespace

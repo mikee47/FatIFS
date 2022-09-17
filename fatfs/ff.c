@@ -202,16 +202,6 @@
 #endif
 
 
-/* Definitions of logical drive - physical location conversion */
-#if FF_MULTI_PARTITION
-#define LD2PD(vol) VolToPart[vol].pd	/* Get physical drive number */
-#define LD2PT(vol) VolToPart[vol].pt	/* Get partition number (0:auto search, 1..:forced partition number) */
-#else
-#define LD2PD(vol) (BYTE)(vol)	/* Each logical drive is associated with the same physical drive number */
-#define LD2PT(vol) 0			/* Auto partition search */
-#endif
-
-
 /* Definitions of sector size */
 #if (FF_MAX_SS < FF_MIN_SS) || (FF_MAX_SS != 512 && FF_MAX_SS != 1024 && FF_MAX_SS != 2048 && FF_MAX_SS != 4096) || (FF_MIN_SS != 512 && FF_MIN_SS != 1024 && FF_MIN_SS != 2048 && FF_MIN_SS != 4096)
 #error Wrong sector size configuration
@@ -432,13 +422,6 @@ static FILESEM Files[FF_FS_LOCK];	/* Open object lock semaphores */
 #ifdef FF_VOLUME_STRS
 static const char* const VolumeStr[FF_VOLUMES] = {FF_VOLUME_STRS};	/* Pre-defined volume ID */
 #endif
-#endif
-
-#if FF_LBA64
-#if FF_MIN_GPT > 0x100000000
-#error Wrong FF_MIN_GPT setting
-#endif
-static const BYTE GUID_MS_Basic[16] = {0xA2,0xA0,0xD0,0xEB,0xE5,0xB9,0x33,0x44,0x87,0xC0,0x68,0xB6,0xB7,0x26,0x99,0xC7};
 #endif
 
 
