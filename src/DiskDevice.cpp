@@ -242,6 +242,7 @@ FRESULT create_partition(Device& device,
 	return IFS::FAT::FR_OK;
 }
 
+#ifdef ENABLE_EXFAT
 FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol,
 						  uint32_t sz_au, uint32_t sz_blk, uint32_t vsn)
 {
@@ -499,8 +500,10 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	return IFS::FAT::FR_OK;
 }
 
+#endif // ENABLE_EXFAT
+
 FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol,
-						uint32_t sz_au, uint32_t sz_blk, uint32_t vsn, int fsty, uint8_t fsopt, unsigned n_root,
+						uint32_t sz_au, uint32_t sz_blk, uint32_t vsn, int fsty, DiskPart::Types types, unsigned n_root,
 						unsigned n_fat)
 {
 	uint32_t pau;	// Physical Allocation Unit
@@ -595,7 +598,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 					sz_au = pau * 2;
 					continue;
 				}
-				if(fsopt & FM_FAT32) {
+				if(types[DiskPart::Type::fat32]) {
 					// Switch type to FAT32 and retry
 					fsty = FS_FAT32;
 					continue;
@@ -749,17 +752,10 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 
 } // namespace
 
-FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
+FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 {
 	constexpr uint8_t ipart{0};
 	uint8_t fsty;
-
-	/* Check mounted drive and clear work area */
-	static const MKFS_PARM defopt = {FM_ANY};
-	if(opt == nullptr) {
-		// Use default parameter if it is not given
-		opt = &defopt;
-	}
 
 	/* Get physical drive status (sz_drv, sz_blk, sectorSize) */
 	uint16_t sectorSize;
@@ -771,19 +767,19 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 #else
 	sectorSize = FF_MAX_SS;
 #endif
-	uint32_t sz_blk = opt->align ?: device.getBlockSize() / sectorSize;
+	uint32_t sz_blk = opt.align ?: device.getBlockSize() / sectorSize;
 	if(sz_blk == 0 || sz_blk > 0x8000 || (sz_blk & (sz_blk - 1))) {
 		sz_blk = 1;
 	}
 
 	/* Options for FAT sub-type and FAT parameters */
-	uint8_t fsopt = opt->fmt & (FM_ANY | FM_SFD);
-	unsigned n_fat = (opt->n_fat >= 1 && opt->n_fat <= 2) ? opt->n_fat : 1;
-	unsigned n_root = opt->n_root;
+	bool useGpt{false};
+	unsigned n_fat = (opt.n_fat >= 1 && opt.n_fat <= 2) ? opt.n_fat : 1;
+	unsigned n_root = opt.n_root;
 	if(n_root == 0 || n_root > 0x8000 || (n_root % (sectorSize / sizeof(EXFAT::exfat_dentry_t))) != 0) {
 		n_root = 512;
 	}
-	uint32_t sz_au = (opt->au_size <= 0x1000000 && (opt->au_size & (opt->au_size - 1)) == 0) ? opt->au_size : 0;
+	uint32_t sz_au = (opt.au_size <= 0x1000000 && (opt.au_size & (opt.au_size - 1)) == 0) ? opt.au_size : 0;
 	sz_au /= sectorSize; // Byte --> Sector
 
 	/* Get working buffer */
@@ -845,8 +841,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 				// Partition not found
 				return IFS::FAT::FR_MKFS_ABORTED;
 			}
-			// Partitioning is in GPT
-			fsopt |= 0x80;
+			useGpt = true;
 		} else
 #endif
 		{
@@ -862,13 +857,12 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 		/* The volume is associated with a physical drive */
 		sz_vol = device.getSectorCount();
 		// To be partitioned?
-		if(!(fsopt & FM_SFD)) {
+		if(opt.createPartition) {
 			// Create a single-partition on the drive
 #if FF_LBA64
 			// Decide on MBR/GPT partition type
 			if(sz_vol >= FF_MIN_GPT) {
-				// Partitioning is in GPT
-				fsopt |= 0x80;
+				useGpt = true;
 				b_vol = GPT_ALIGN / sectorSize;
 				// Estimate partition offset and size
 				sz_vol -= 1 + b_vol + GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize;
@@ -893,9 +887,9 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 
 	do {
 		/* Pre-determine the FAT type */
-#if FF_FS_EXFAT
+#ifdef ENABLE_EXFAT
 		// exFAT only, vol >= 64MS or sz_au > 128S ?
-		if((fsopt & FM_ANY) == FM_EXFAT || sz_vol >= 0x4000000 || sz_au > 128) {
+		if(opt.types == DiskPart::Type::exfat || sz_vol >= 0x4000000 || sz_au > 128) {
 			fsty = FS_EXFAT;
 			break;
 		}
@@ -910,11 +904,11 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 		if(sz_au > 128) {
 			sz_au = 128;
 		}
-		if((fsopt & FM_ANY) == FM_FAT32) {
+		if(opt.types == DiskPart::Type::fat32) {
 			fsty = FS_FAT32;
 			break;
 		}
-		if(!(fsopt & FM_FAT)) {
+		if(!opt.types[DiskPart::Type::fat]) {
 			return IFS::FAT::FR_INVALID_PARAMETER;
 		}
 		fsty = FS_FAT16;
@@ -922,22 +916,23 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 
 	uint32_t vsn = os_random();
 
-#if FF_FS_EXFAT
+#ifdef ENABLE_EXFAT
 	if(fsty == FS_EXFAT) {
 		/* Create an exFAT volume */
 		createExFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn);
 
 	} else
-#endif /* FF_FS_EXFAT */
+#endif
 	{
-		createFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn, fsty, fsopt, n_root, n_fat);
+		createFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn, fsty, opt.types, n_root,
+						n_fat);
 	}
 
 	/* A FAT volume has been created here */
 
 	/* Determine system ID in the MBR partition table */
 	uint8_t sys;
-	if(FF_FS_EXFAT && fsty == FS_EXFAT) {
+	if(fsty == FS_EXFAT) {
 		// exFAT
 		sys = 0x07;
 	} else if(fsty == FS_FAT32) {
@@ -954,7 +949,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 
 	/* Update partition information */
 	if(FF_MULTI_PARTITION && ipart != 0) { /* Volume is in the existing partition */
-		if(!FF_LBA64 || !(fsopt & 0x80)) {
+		if(!useGpt) {
 			/* Update system ID in the partition table (MBR) */
 			auto& mbr = workBuffer.as<legacy_mbr_t>();
 			if(!READ_SECTORS(&mbr, 0, 1)) {
@@ -965,7 +960,7 @@ FRESULT f_mkfs(Device& device, const Storage::MKFS_PARM* opt)
 				return IFS::FAT::FR_DISK_ERR;
 			}
 		}
-	} else if(!(fsopt & FM_SFD)) {
+	} else if(opt.createPartition) {
 		// Not in SFD: create partition table
 		LBA_t lba[] = {sz_vol, 0};
 		auto fr = create_partition(device, lba, sys, workBuffer);

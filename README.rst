@@ -35,3 +35,15 @@ MMC pin     SD pin   miniSD pin    microSD pin   Name   I/O   Logic    Descripti
 -           -        10            -             NC                    Reserved
 -           -        11            -             NC                    Reserved
 ==========  =======  ============  ============  =====  ====  =======  ======================================
+
+
+Configuration options
+---------------------
+
+
+.. envvar:: ENABLE_EXFAT
+
+   default: 0 (disabled)
+
+   Set to 1 to enable support for EXFAT volumes.
+   Required if enabling :envvar:`ENABLE_STORAGE_SIZE64` option.
