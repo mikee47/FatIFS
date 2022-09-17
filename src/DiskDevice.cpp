@@ -51,27 +51,26 @@ using FRESULT = IFS::FAT::FRESULT;
 
 #if FF_LBA64
 /* Create partitions in GPT format */
-FRESULT create_partition_gpt(Device& device,
+FRESULT create_partition_gpt(Device& device, unsigned sectorSize,
 							 const LBA_t plst[], // Partition list
 							 uint8_t sys,		 // System ID (for only MBR, temp setting)
 							 WorkBuffer& workBuffer)
 {
-#if FF_MAX_SS == FF_MIN_SS
-	sectorSize = FF_MAX_SS;
-#endif
-	uint32_t align = GPT_ALIGN / sectorSize;						   // Partition alignment for GPT [sector]
-	unsigned ptSectors = GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize; // Size of partition table [sector]
-	uint64_t top_bpt = driveSectors - ptSectors - 1;				   // Backup partiiton table start sector
-	uint64_t nxt_alloc = 2 + ptSectors;								   // First allocatable sector
-	uint64_t sz_pool = top_bpt - nxt_alloc;							   // Size of allocatable area
-	uint32_t bcc = 0;												   // Cumulative partition entry checksum
+	auto driveSectors = device.getSectorCount();
+	auto partAlignSectors = GPT_ALIGN / sectorSize; // Partition alignment for GPT [sector]
+	auto numPartitionTableSectors = GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize; // Size of partition table [sector]
+	uint64_t backupPartitionTableSector =
+		driveSectors - numPartitionTableSectors - 1;					   // Backup partiiton table start sector
+	uint64_t nextAllocatableSector = 2 + numPartitionTableSectors;		   // First allocatable sector
+	uint64_t sz_pool = backupPartitionTableSector - nextAllocatableSector; // Size of allocatable area
+	uint32_t bcc = 0;													   // Cumulative partition entry checksum
 	uint64_t sz_part = 1;
-	unsigned ptIndex = 0; // partition table index
-	unsigned si = 0;	  // size table index
+	unsigned partitionIndex = 0; // partition table index
+	unsigned si = 0;			 // size table index
 	auto entries = workBuffer.as<gpt_entry_t[]>();
 	auto entriesPerSector = sectorSize / sizeof(gpt_entry_t);
-	for(; ptIndex < GPT_ITEMS; ++ptIndex) {
-		auto i = ptIndex % entriesPerSector;
+	for(; partitionIndex < GPT_ITEMS; ++partitionIndex) {
+		auto i = partitionIndex % entriesPerSector;
 		if(i == 0) {
 			workBuffer.clear();
 		}
@@ -79,17 +78,19 @@ FRESULT create_partition_gpt(Device& device,
 		// Is the size table not terminated?
 		if(sz_part != 0) {
 			// Align partition start
-			nxt_alloc = align_up(nxt_alloc, align);
+			nextAllocatableSector = align_up(nextAllocatableSector, partAlignSectors);
 			sz_part = plst[si++]; // Get a partition size
 			// Is the size in percentage?
 			if(sz_part <= 100) {
 				sz_part = sz_pool * sz_part / 100;
 				// Align partition end
-				sz_part = align_up(sz_part, align);
+				sz_part = align_up(sz_part, partAlignSectors);
 			}
 			// Clip the size at end of the pool
-			if(nxt_alloc + sz_part > top_bpt) {
-				sz_part = (nxt_alloc < top_bpt) ? top_bpt - nxt_alloc : 0;
+			if(nextAllocatableSector + sz_part > backupPartitionTableSector) {
+				sz_part = (nextAllocatableSector < backupPartitionTableSector)
+							  ? backupPartitionTableSector - nextAllocatableSector
+							  : 0;
 			}
 		}
 
@@ -98,22 +99,22 @@ FRESULT create_partition_gpt(Device& device,
 			auto& entry = entries[i];
 			entry.partition_type_guid = PARTITION_BASIC_DATA_GUID;
 			os_get_random(&entry.unique_partition_guid, sizeof(efi_guid_t));
-			entry.starting_lba = nxt_alloc;
-			entry.ending_lba = nxt_alloc + sz_part - 1;
-			nxt_alloc += sz_part; // Next allocatable sector
+			entry.starting_lba = nextAllocatableSector;
+			entry.ending_lba = nextAllocatableSector + sz_part - 1;
+			nextAllocatableSector += sz_part; // Next allocatable sector
 		}
 
 		// Write the buffer if it is filled up
-		if(ptIndex + 1 == entriesPerSector) {
+		if(partitionIndex + 1 == entriesPerSector) {
 			// Update cumulative partition entry checksum
 			bcc = crc32(bcc, entries, sectorSize);
 			// Write to primary table
-			auto entryRelativeSector = ptIndex / entriesPerSector;
+			auto entryRelativeSector = partitionIndex / entriesPerSector;
 			if(!WRITE_SECTORS(entries, 2 + entryRelativeSector, 1)) {
 				return IFS::FAT::FR_DISK_ERR;
 			}
 			// Write to secondary table
-			if(!WRITE_SECTORS(entries, top_bpt + entryRelativeSector, 1)) {
+			if(!WRITE_SECTORS(entries, backupPartitionTableSector + entryRelativeSector, 1)) {
 				return IFS::FAT::FR_DISK_ERR;
 			}
 		}
@@ -127,8 +128,8 @@ FRESULT create_partition_gpt(Device& device,
 		.header_size = sizeof(gpt_header_t),
 		.my_lba = 1,
 		.alternate_lba = driveSectors - 1,
-		.first_usable_lba = 2 + ptSectors,
-		.last_usable_lba = top_bpt - 1,
+		.first_usable_lba = 2 + numPartitionTableSectors,
+		.last_usable_lba = backupPartitionTableSector - 1,
 		.partition_entry_lba = 2,
 		.num_partition_entries = GPT_ITEMS,
 		.sizeof_partition_entry = sizeof(gpt_entry_t),
@@ -142,7 +143,7 @@ FRESULT create_partition_gpt(Device& device,
 
 	/* Create secondary GPT header */
 	std::swap(header.my_lba, header.alternate_lba);
-	header.partition_entry_lba = top_bpt;
+	header.partition_entry_lba = backupPartitionTableSector;
 	header.header_crc32 = 0;
 	header.header_crc32 = crc32(&header, sizeof(header));
 	if(!WRITE_SECTORS(&header, header.my_lba, 1)) {
@@ -175,13 +176,12 @@ FRESULT create_partition_gpt(Device& device,
 #endif // FF_LBA64
 
 /* Create partitions in MBR format */
-FRESULT create_partition_mbr(Device& device,
+FRESULT create_partition_mbr(Device& device, unsigned sectorSize,
 							 const LBA_t plst[], // Partition list
 							 uint8_t sys,		 // System ID (for only MBR, temp setting)
 							 WorkBuffer& workBuffer)
 {
 	uint32_t sz_drv32 = device.getSectorCount();
-	auto sectorSize = device.getSectorSize();
 	// Determine drive CHS without any consideration of the drive geometry
 	uint8_t n_sc = N_SEC_TRACK;
 	uint8_t n_hd;
@@ -261,56 +261,59 @@ FRESULT create_partition(Device& device,
 
 #if FF_LBA64
 	if(driveSectors >= FF_MIN_GPT) {
-		return create_partition_gpt(device, plst, sys, workBuffer);
+		return create_partition_gpt(device, sectorSize, plst, sys, workBuffer);
 	}
 #endif
 
-	return create_partition_mbr(device, plst, sys, workBuffer);
+	return create_partition_mbr(device, sectorSize, plst, sys, workBuffer);
 }
 
 #ifdef ENABLE_EXFAT
-FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol,
-						  uint32_t sz_au, uint32_t sz_blk, uint32_t vsn)
+FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t volumeStartSector,
+						  LBA_t volumeSectorCount, uint32_t sectorsPerCluster, uint32_t sectorsPerBlock, uint32_t vsn)
 {
-	if(sz_vol < 0x1000) {
+	if(volumeSectorCount < 0x1000) {
 		// Volume too small for exFAT
 		return IFS::FAT::FR_MKFS_ABORTED;
 	}
 #if FF_USE_TRIM
 	// Inform storage device that the volume area may be erased
-	device.trim(b_vol, sz_vol);
+	device.trim(volumeStartSector, volumeSectorCount);
 #endif
 	/* Determine FAT location, data location and number of clusters */
-	if(sz_au == 0) { /* AU auto-selection */
-		if(sz_vol >= 0x4000000) {
-			sz_au = 256; /* >= 64Ms */
-		} else if(sz_vol >= 0x80000) {
-			sz_au = 64; /* >= 512Ks */
+	if(sectorsPerCluster == 0) { /* AU auto-selection */
+		if(volumeSectorCount >= 64 * 1024 * 1024) {
+			sectorsPerCluster = 256;
+		} else if(volumeSectorCount >= 512 * 1024) {
+			sectorsPerCluster = 64;
 		} else {
-			sz_au = 8;
+			sectorsPerCluster = 8;
 		}
 	}
-	LBA_t b_fat = b_vol + 32;													// FAT start at offset 32
-	uint32_t sz_fat = ((sz_vol / sz_au + 2) * 4 + sectorSize - 1) / sectorSize; // Number of FAT sectors
-	LBA_t b_data = align_up(b_fat + sz_fat, sz_blk); // Align data area to the erase block boundary
-	if(b_data - b_vol >= sz_vol / 2) {
+	const LBA_t fatStartSector = volumeStartSector + 32;
+	const uint32_t numFatSectors =
+		getBlockCount((volumeSectorCount / sectorsPerCluster + 2) * sizeof(uint32_t), sectorSize);
+	const LBA_t dataStartSector = align_up(fatStartSector + numFatSectors, sectorsPerBlock);
+	if(dataStartSector - volumeStartSector >= volumeSectorCount / 2) {
 		// Volume too small
 		return IFS::FAT::FR_MKFS_ABORTED;
 	}
-	uint32_t n_clst = (sz_vol - (b_data - b_vol)) / sz_au; // Number of clusters
-	if(n_clst < 16 || n_clst > MAX_EXFAT) {
+	const uint32_t numClusters = (volumeSectorCount - (dataStartSector - volumeStartSector)) / sectorsPerCluster;
+	if(numClusters < 16 || numClusters > MAX_EXFAT) {
 		// Too few/many clusters
 		return IFS::FAT::FR_MKFS_ABORTED;
 	}
 
-	uint32_t szb_bit = (n_clst + 7) / 8; // Size of allocation bitmap
-	uint32_t clen[3] = {
-		getBlockCount(szb_bit, sz_au * sectorSize), // Number of allocation bitmap clusters
+	const uint32_t bitmapSize = (numClusters + 7) / 8; // Size of allocation bitmap
+
+	// bitmap, upcaseTable, rootDir
+	uint32_t clusterLengths[3] = {
+		getBlockCount(bitmapSize, sectorsPerCluster * sectorSize), // Number of allocation bitmap clusters
 	};
 
 	/* Create a compressed up-case table */
-	LBA_t sect = b_data + sz_au * clen[0]; // Table start sector
-	uint32_t sum = 0;					   // Table checksum to be stored in the 82 entry
+	LBA_t sect = dataStartSector + sectorsPerCluster * clusterLengths[0]; // Table start sector
+	uint32_t sum = 0;													  // Table checksum to be stored in the 82 entry
 	unsigned st = 0;
 	IFS::FAT::WCHAR si = 0;
 	unsigned sectorOffset = 0;
@@ -374,13 +377,14 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 			sectorOffset = 0;
 		}
 	} while(si != 0);
-	clen[1] = getBlockCount(szb_case, sz_au * sectorSize); // Number of up-case table clusters
-	clen[2] = 1;										   // Number of root dir clusters
+	clusterLengths[1] = getBlockCount(szb_case, sectorsPerCluster * sectorSize); // Number of up-case table clusters
+	clusterLengths[2] = 1;														 // Number of root dir clusters
 
 	/* Initialize the allocation bitmap */
-	sect = b_data;
-	auto nsect = getBlockCount(szb_bit, sectorSize); // Start of bitmap and number of bitmap sectors
-	auto nbit = clen[0] + clen[1] + clen[2]; // Number of clusters in-use by system (bitmap, up-case and root-dir)
+	sect = dataStartSector;
+	auto nsect = getBlockCount(bitmapSize, sectorSize); // Start of bitmap and number of bitmap sectors
+	auto nbit = clusterLengths[0] + clusterLengths[1] +
+				clusterLengths[2]; // Number of clusters in-use by system (bitmap, up-case and root-dir)
 	do {
 		workBuffer.clear();
 
@@ -398,8 +402,8 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	} while(nsect != 0);
 
 	/* Initialize the FAT */
-	sect = b_fat;
-	nsect = sz_fat; /* Start of FAT and number of FAT sectors */
+	sect = fatStartSector;
+	nsect = numFatSectors; /* Start of FAT and number of FAT sectors */
 	j = 0;
 	nbit = 0;
 	uint32_t clu = 0;
@@ -418,7 +422,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 				fat[clu] = (nbit > 1) ? clu + 1 : 0xFFFFFFFF;
 			}
 			if(nbit == 0 && j < 3) {
-				nbit = clen[j++]; // Next chain length
+				nbit = clusterLengths[j++]; // Next chain length
 			}
 		} while(nbit != 0 && clu < clusterCount);
 		auto n = std::min(nsect, workBuffer.sectors());
@@ -437,16 +441,16 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	// Bitmap entry
 	dir[1].type = EXFAT_BITMAP;
 	dir[1].bitmap.start_clu = 2;
-	dir[1].bitmap.size = szb_bit;
+	dir[1].bitmap.size = bitmapSize;
 	// Up-case table entry
 	dir[2].type = EXFAT_UPCASE;
 	dir[2].upcase.checksum = sum;
-	dir[2].upcase.start_clu = 2 + clen[0];
+	dir[2].upcase.start_clu = 2 + clusterLengths[0];
 	dir[2].upcase.size = szb_case;
 
-	sect = b_data + sz_au * (clen[0] + clen[1]);
-	nsect = sz_au; /* Start of the root directory and number of sectors */
-	do {		   /* Fill root directory sectors */
+	sect = dataStartSector + sectorsPerCluster * (clusterLengths[0] + clusterLengths[1]);
+	nsect = sectorsPerCluster; /* Start of the root directory and number of sectors */
+	do {					   /* Fill root directory sectors */
 		auto n = std::min(nsect, workBuffer.sectors());
 		if(!WRITE_SECTORS(dir, sect, n)) {
 			return IFS::FAT::FR_DISK_ERR;
@@ -458,7 +462,7 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	} while(nsect != 0);
 
 	/* Create two sets of the exFAT VBR blocks */
-	sect = b_vol;
+	sect = volumeStartSector;
 	for(unsigned n = 0; n < 2; ++n) {
 		/* Main record (+0) */
 		workBuffer.clear();
@@ -466,17 +470,17 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 		bpb = EXFAT::boot_sector_t{
 			.jmp_boot = {0xEB, 0x76, 0x90},
 			.fs_type = FSTYPE_EXFAT,
-			.partition_offset = b_vol,				// Volume offset in the physical drive [sector]
-			.vol_length = sz_vol,					// Volume size [sector]
-			.fat_offset = uint32_t(b_fat - b_vol),  // FAT offset [sector]
-			.fat_length = sz_fat,					// FAT size [sector]
-			.clu_offset = uint32_t(b_data - b_vol), // Data offset [sector]
-			.clu_count = n_clst,					// Number of clusters
-			.root_cluster = 2 + clen[0] + clen[1],  // Root dir cluster #
+			.partition_offset = volumeStartSector,						 // Volume offset in the physical drive [sector]
+			.vol_length = volumeSectorCount,							 // Volume size [sector]
+			.fat_offset = uint32_t(fatStartSector - volumeStartSector),  // FAT offset [sector]
+			.fat_length = numFatSectors,								 // FAT size [sector]
+			.clu_offset = uint32_t(dataStartSector - volumeStartSector), // Data offset [sector]
+			.clu_count = numClusters,									 // Number of clusters
+			.root_cluster = 2 + clusterLengths[0] + clusterLengths[1],   // Root dir cluster #
 			.vol_serial = vsn,
 			.fs_revision = 0x0100, // Filesystem version (1.00)
 			.sect_size_bits = getSizeBits(sectorSize),
-			.sect_per_clus_bits = getSizeBits(sz_au),
+			.sect_per_clus_bits = getSizeBits(sectorsPerCluster),
 			.num_fats = 1,
 			.drv_sel = 0x80,		   // Drive number (for int13)
 			.boot_code = {0xEB, 0xFE}, // Boot code (x86)
@@ -528,33 +532,33 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 
 #endif // ENABLE_EXFAT
 
-FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t b_vol, LBA_t sz_vol,
-						uint32_t sz_au, uint32_t sz_blk, uint32_t vsn, int fsty, DiskPart::Types types, unsigned n_root,
-						unsigned n_fat)
+FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuffer, LBA_t volumeStartSector,
+						LBA_t volumeSectorCount, uint32_t sectorsPerCluster, uint32_t sectorsPerBlock, uint32_t vsn,
+						int fsty, const bool allowFat32, const unsigned numRootEntries, const uint8_t numFats)
 {
-	uint32_t pau;	// Physical Allocation Unit
-	uint32_t n_clst; // Number of clusters
-	uint32_t sz_fat; // FAT size [sector]
-	uint32_t sz_rsv; // Number of reserved sectors
-	uint32_t sz_dir; // Root dir size [sector]
-	LBA_t b_fat;
+	uint32_t pau;			// Physical Allocation Unit
+	uint32_t numClusters;   // Number of clusters
+	uint32_t numFatSectors; // FAT size [sector]
+	uint32_t sz_rsv;		// Number of reserved sectors
+	uint32_t sz_dir;		// Root dir size [sector]
+	LBA_t fatStartSector;
 	do {
-		pau = sz_au;
+		pau = sectorsPerCluster;
 		/* Pre-determine number of clusters and FAT sub-type */
 		if(fsty == FS_FAT32) {
 			/* FAT32 volume */
 			if(pau == 0) {
 				// Determine allocation unit size from Volume size, in unit of 128K
-				auto n = sz_vol / 0x20000;
+				auto n = volumeSectorCount / 0x20000;
 				static const uint16_t cst[] = {1, 2, 4, 8, 16, 32, 0};
 				for(unsigned i = 0, pau = 1; cst[i] != 0 && cst[i] <= n; ++i, pau <<= 1) {
 				}
 			}
-			n_clst = sz_vol / pau;
-			sz_fat = getBlockCount((2 + n_clst) * sizeof(uint32_t), sectorSize);
+			numClusters = volumeSectorCount / pau;
+			numFatSectors = getBlockCount((2 + numClusters) * sizeof(uint32_t), sectorSize);
 			sz_rsv = 32;
 			sz_dir = 0; // No static directory
-			if(n_clst <= MAX_FAT16 || n_clst > MAX_FAT32) {
+			if(numClusters <= MAX_FAT16 || numClusters > MAX_FAT32) {
 				return IFS::FAT::FR_MKFS_ABORTED;
 			}
 		} else {
@@ -562,53 +566,54 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			uint32_t n; // FAT size [byte]
 			if(pau == 0) {
 				// Determine allocation unit size from volume size, in units of 4K
-				n = sz_vol / 0x1000;
+				n = volumeSectorCount / 0x1000;
 				static const uint16_t cst[] = {1, 4, 16, 64, 256, 512, 0};
 				for(unsigned i = 0, pau = 1; cst[i] != 0 && cst[i] <= n; ++i, pau <<= 1) {
 				}
 			}
-			n_clst = sz_vol / pau;
-			if(n_clst > MAX_FAT12) {
-				n = n_clst * 2 + 4;
+			numClusters = volumeSectorCount / pau;
+			if(numClusters > MAX_FAT12) {
+				n = numClusters * 2 + 4;
 			} else {
 				fsty = FS_FAT12;
-				n = (n_clst * 3 + 1) / 2 + 3;
+				n = (numClusters * 3 + 1) / 2 + 3;
 			}
-			sz_fat = (n + sectorSize - 1) / sectorSize;
+			numFatSectors = (n + sectorSize - 1) / sectorSize;
 			sz_rsv = 1;
-			sz_dir = n_root * sizeof(FAT::msdos_dir_entry_t) / sectorSize;
+			sz_dir = numRootEntries * sizeof(FAT::msdos_dir_entry_t) / sectorSize;
 		}
-		b_fat = b_vol + sz_rsv;							// FAT base sector
-		LBA_t b_data = b_fat + sz_fat * n_fat + sz_dir; // Data base sector
+		fatStartSector = volumeStartSector + sz_rsv;							   // FAT base sector
+		LBA_t dataStartSector = fatStartSector + numFatSectors * numFats + sz_dir; // Data base sector
 
 		/* Align data area to erase block boundary (for flash memory media) */
-		uint32_t n = align_up(b_data, sz_blk) - b_data; // Sectors to next nearest from current data base
-		if(fsty == FS_FAT32) {							/* FAT32: Move FAT */
+		uint32_t n = align_up(dataStartSector, sectorsPerBlock) -
+					 dataStartSector; // Sectors to next nearest from current data base
+		if(fsty == FS_FAT32) {		  /* FAT32: Move FAT */
 			sz_rsv += n;
-			b_fat += n;
+			fatStartSector += n;
 		} else { /* FAT: Expand FAT */
-			if(n % n_fat != 0) {
+			if(n % numFats != 0) {
 				// Adjust fractional error
 				--n;
 				++sz_rsv;
-				++b_fat;
+				++fatStartSector;
 			}
-			sz_fat += n / n_fat;
+			numFatSectors += n / numFats;
 		}
 
 		/* Determine number of clusters and final check of validity of the FAT sub-type */
-		if(sz_vol < b_data + pau * 16 - b_vol) {
+		if(volumeSectorCount < dataStartSector + pau * 16 - volumeStartSector) {
 			// Volume too small
 			return IFS::FAT::FR_MKFS_ABORTED;
 		}
-		n_clst = (sz_vol - sz_rsv - sz_fat * n_fat - sz_dir) / pau;
+		numClusters = (volumeSectorCount - sz_rsv - numFatSectors * numFats - sz_dir) / pau;
 		if(fsty == FS_FAT32) {
-			if(n_clst <= MAX_FAT16) {
+			if(numClusters <= MAX_FAT16) {
 				// Too few clusters for FAT32
-				if(sz_au == 0) {
+				if(sectorsPerCluster == 0) {
 					// Adjust cluster size and retry
-					sz_au = pau / 2;
-					if(sz_au != 0) {
+					sectorsPerCluster = pau / 2;
+					if(sectorsPerCluster != 0) {
 						continue;
 					}
 				}
@@ -617,34 +622,34 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		}
 
 		if(fsty == FS_FAT16) {
-			if(n_clst > MAX_FAT16) {
+			if(numClusters > MAX_FAT16) {
 				// Too many clusters for FAT16
-				if(sz_au == 0 && (pau * 2) <= 64) {
+				if(sectorsPerCluster == 0 && (pau * 2) <= 64) {
 					// Adjust cluster size and retry
-					sz_au = pau * 2;
+					sectorsPerCluster = pau * 2;
 					continue;
 				}
-				if(types[DiskPart::Type::fat32]) {
+				if(allowFat32) {
 					// Switch type to FAT32 and retry
 					fsty = FS_FAT32;
 					continue;
 				}
-				if(sz_au == 0) {
+				if(sectorsPerCluster == 0) {
 					// Adjust cluster size and retry
-					sz_au = pau * 2;
-					if(sz_au <= 128) {
+					sectorsPerCluster = pau * 2;
+					if(sectorsPerCluster <= 128) {
 						continue;
 					}
 				}
 				return IFS::FAT::FR_MKFS_ABORTED;
 			}
 
-			if(n_clst <= MAX_FAT12) {
+			if(numClusters <= MAX_FAT12) {
 				// Too few clusters for FAT16
-				if(sz_au == 0) {
+				if(sectorsPerCluster == 0) {
 					// Adjust cluster size and retry
-					sz_au = pau * 2;
-					if(sz_au <= 128) {
+					sectorsPerCluster = pau * 2;
+					if(sectorsPerCluster <= 128) {
 						continue;
 					}
 				}
@@ -652,7 +657,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			}
 		}
 
-		if(fsty == FS_FAT12 && n_clst > MAX_FAT12) {
+		if(fsty == FS_FAT12 && numClusters > MAX_FAT12) {
 			// Too many clusters for FAT12
 			return IFS::FAT::FR_MKFS_ABORTED;
 		}
@@ -663,7 +668,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 
 #if FF_USE_TRIM
 	// Inform storage device that the volume area may be erased
-	device.trim(b_vol, sz_vol);
+	device.trim(volumeStartSector, volumeSectorCount);
 #endif
 	/* Create FAT VBR */
 	workBuffer.clear();
@@ -674,19 +679,19 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		.sector_size = sectorSize,
 		.sec_per_clus = uint8_t(pau),
 		.reserved = uint16_t(sz_rsv),
-		.num_fats = uint8_t(n_fat),
-		.dir_entries = uint16_t((fsty == FS_FAT32) ? 0 : n_root),
-		.sectors = uint16_t((sz_vol < 0x10000) ? sz_vol : 0), // Volume size in 16-bit LBA
+		.num_fats = uint8_t(numFats),
+		.dir_entries = uint16_t((fsty == FS_FAT32) ? 0 : numRootEntries),
+		.sectors = uint16_t((volumeSectorCount < 0x10000) ? volumeSectorCount : 0), // Volume size in 16-bit LBA
 		.media = 0xF8,
-		.fat_length = uint16_t((fsty != FS_FAT32) ? sz_fat : 0),
-		.secs_track = 64,										  // Number of sectors per track (for int13)
-		.heads = 255,											  // Number of heads (for int13)
-		.hidden = uint32_t(b_vol),								  // Volume offset in the physical drive [sector]
-		.total_sect = uint32_t((sz_vol >= 0x10000) ? sz_vol : 0), // Volume size in 32-bit LBA
+		.fat_length = uint16_t((fsty != FS_FAT32) ? numFatSectors : 0),
+		.secs_track = 64,					   // Number of sectors per track (for int13)
+		.heads = 255,						   // Number of heads (for int13)
+		.hidden = uint32_t(volumeStartSector), // Volume offset in the physical drive [sector]
+		.total_sect = uint32_t((volumeSectorCount >= 0x10000) ? volumeSectorCount : 0), // Volume size in 32-bit LBA
 	};
 	if(fsty == FS_FAT32) {
 		bpb.fat32 = decltype(bpb.fat32){
-			.fat_length = sz_fat,
+			.fat_length = numFatSectors,
 			.root_cluster = 2,
 			.info_sector = 1,	 // Offset of FSINFO sector (VBR + 1)
 			.backup_boot = 6,	 // Offset of backup VBR (VBR + 6)
@@ -706,14 +711,14 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		};
 	}
 	bpb.signature = BOOT_SIGNATURE;
-	if(!WRITE_SECTORS(&bpb, b_vol, 1)) {
+	if(!WRITE_SECTORS(&bpb, volumeStartSector, 1)) {
 		return IFS::FAT::FR_DISK_ERR;
 	}
 
 	/* Create FSINFO record if needed */
 	if(fsty == FS_FAT32) {
 		/* Write backup VBR (VBR + 6) */
-		if(!WRITE_SECTORS(&bpb, b_vol + 6, 1)) {
+		if(!WRITE_SECTORS(&bpb, volumeStartSector + 6, 1)) {
 			return IFS::FAT::FR_DISK_ERR;
 		}
 		workBuffer.clear();
@@ -721,24 +726,24 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 		fsinfo = FAT::fat_boot_fsinfo_t{
 			.signature1 = FAT_FSINFO_SIG1,
 			.signature2 = FAT_FSINFO_SIG2,
-			.free_clusters = n_clst - 1,
+			.free_clusters = numClusters - 1,
 			.next_cluster = 2,
 			.signature = BOOT_SIGNATURE,
 		};
 		// Write backup FSINFO (VBR + 7)
-		if(!WRITE_SECTORS(&fsinfo, b_vol + 7, 1)) {
+		if(!WRITE_SECTORS(&fsinfo, volumeStartSector + 7, 1)) {
 			return IFS::FAT::FR_DISK_ERR;
 		}
 		// Write original FSINFO (VBR + 1)
-		if(!WRITE_SECTORS(&fsinfo, b_vol + 1, 1)) {
+		if(!WRITE_SECTORS(&fsinfo, volumeStartSector + 1, 1)) {
 			return IFS::FAT::FR_DISK_ERR;
 		}
 	}
 
 	/* Initialize FAT area */
 	workBuffer.clear();
-	auto sect = b_fat;
-	for(unsigned i = 0; i < n_fat; ++i) {
+	auto sect = fatStartSector;
+	for(unsigned i = 0; i < numFats; ++i) {
 		// Initialize each FAT
 		if(fsty == FS_FAT32) {
 			auto fat = workBuffer.as<uint32_t[]>();
@@ -750,7 +755,7 @@ FRESULT createFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workBuf
 			fat[0] = 0xFFF8;
 			fat[1] = (fsty == FS_FAT12) ? 0x00FF : 0xFFFF;
 		}
-		for(auto nsect = sz_fat; nsect != 0;) {
+		for(auto nsect = numFatSectors; nsect != 0;) {
 			// Fill FAT sectors
 			auto n = std::min(nsect, workBuffer.sectors());
 			if(!WRITE_SECTORS(workBuffer.get(), sect, n)) {
@@ -782,7 +787,7 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 {
 	uint8_t fsty;
 
-	/* Get physical drive status (sz_drv, sz_blk, sectorSize) */
+	/* Get physical drive status (sz_drv, sectorsPerBlock, sectorSize) */
 	uint16_t sectorSize;
 #if FF_MAX_SS != FF_MIN_SS
 	sectorSize = device.getSectorSize();
@@ -792,20 +797,29 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 #else
 	sectorSize = FF_MAX_SS;
 #endif
-	uint32_t sz_blk = opt.align ?: device.getBlockSize() / sectorSize;
-	if(sz_blk == 0 || sz_blk > 0x8000 || (sz_blk & (sz_blk - 1))) {
-		sz_blk = 1;
+	uint32_t sectorsPerBlock = opt.align ?: device.getBlockSize() / sectorSize;
+	if(sectorsPerBlock == 0 || sectorsPerBlock > 0x8000 || (sectorsPerBlock & (sectorsPerBlock - 1))) {
+		sectorsPerBlock = 1;
 	}
 
 	/* Options for FAT sub-type and FAT parameters */
 	bool useGpt{false};
-	unsigned n_fat = (opt.n_fat >= 1 && opt.n_fat <= 2) ? opt.n_fat : 1;
-	unsigned n_root = opt.n_root;
-	if(n_root == 0 || n_root > 0x8000 || (n_root % (sectorSize / sizeof(EXFAT::exfat_dentry_t))) != 0) {
-		n_root = 512;
+	uint8_t numFats = (opt.numFats >= 2) ? 2 : 1;
+	unsigned numRootEntries = opt.numRootEntries;
+	if(numRootEntries == 0 || numRootEntries > 0x8000 ||
+	   (numRootEntries % (sectorSize / sizeof(EXFAT::exfat_dentry_t))) != 0) {
+		numRootEntries = 512;
 	}
-	uint32_t sz_au = (opt.au_size <= 0x1000000 && (opt.au_size & (opt.au_size - 1)) == 0) ? opt.au_size : 0;
-	sz_au /= sectorSize; // Byte --> Sector
+
+	uint32_t sectorsPerCluster;
+	if(opt.clusterSize == 0) {
+		sectorsPerCluster = 0; // Auto-detect later on
+	} else {
+		// Round up requested cluster size to nearest power of 2
+		auto clusterSize = 0x80000000U >> __builtin_clz(opt.clusterSize);
+		clusterSize = std::max(0x1000000U, clusterSize);
+		sectorsPerCluster = clusterSize / sectorSize;
+	}
 
 	/* Get working buffer */
 	WorkBuffer workBuffer(sectorSize, 1);
@@ -813,9 +827,9 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 		return IFS::FAT::FR_NOT_ENOUGH_CORE;
 	}
 
-	/* Determine where the volume to be located (b_vol, sz_vol) */
-	LBA_t b_vol = 0;					   // Base LBA of volume
-	LBA_t sz_vol = 0;					   // Size of volume
+	/* Determine where the volume to be located (volumeStartSector, volumeSectorCount) */
+	LBA_t volumeStartSector = 0;
+	LBA_t volumeSectorCount = 0;		   // Size of volume
 	if(FF_MULTI_PARTITION && ipart != 0) { /* Is the volume associated with any specific partition? */
 		/* Get partition location from the existing partition table */
 
@@ -858,8 +872,8 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 				if(i < ipart) {
 					continue;
 				}
-				b_vol = entry.starting_lba;
-				sz_vol = 1 + entry.ending_lba - entry.starting_lba;
+				volumeStartSector = entry.starting_lba;
+				volumeSectorCount = 1 + entry.ending_lba - entry.starting_lba;
 				break;
 			}
 			if(n_ent == 0) {
@@ -875,59 +889,59 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 			if(ipart > 4 || entry.os_type == 0) {
 				return IFS::FAT::FR_MKFS_ABORTED; // No partition
 			}
-			b_vol = entry.starting_lba;
-			sz_vol = entry.size_in_lba;
+			volumeStartSector = entry.starting_lba;
+			volumeSectorCount = entry.size_in_lba;
 		}
 	} else {
 		/* The volume is associated with a physical drive */
-		sz_vol = device.getSectorCount();
+		volumeSectorCount = device.getSectorCount();
 		// To be partitioned?
 		if(opt.createPartition) {
 			// Create a single-partition on the drive
 #if FF_LBA64
 			// Decide on MBR/GPT partition type
-			if(sz_vol >= FF_MIN_GPT) {
+			if(volumeSectorCount >= FF_MIN_GPT) {
 				useGpt = true;
-				b_vol = GPT_ALIGN / sectorSize;
+				volumeStartSector = GPT_ALIGN / sectorSize;
 				// Estimate partition offset and size
-				sz_vol -= 1 + b_vol + GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize;
+				volumeSectorCount -= 1 + volumeStartSector + GPT_ITEMS * sizeof(gpt_entry_t) / sectorSize;
 			} else
 #endif
 			{
 				// Partitioning is in MBR
-				if(sz_vol > N_SEC_TRACK) {
+				if(volumeSectorCount > N_SEC_TRACK) {
 					// Estimate partition offset and size
-					b_vol = N_SEC_TRACK;
-					sz_vol -= b_vol;
+					volumeStartSector = N_SEC_TRACK;
+					volumeSectorCount -= volumeStartSector;
 				}
 			}
 		}
 	}
 	// Check for minimum volume size
-	if(sz_vol < 128) {
+	if(volumeSectorCount < 128) {
 		return IFS::FAT::FR_MKFS_ABORTED;
 	}
 
-	/* Now start to create a FAT volume at b_vol and sz_vol */
+	/* Now start to create a FAT volume at volumeStartSector and volumeSectorCount */
 
 	do {
 		/* Pre-determine the FAT type */
 #ifdef ENABLE_EXFAT
-		// exFAT only, vol >= 64MS or sz_au > 128S ?
-		if(opt.types == DiskPart::Type::exfat || sz_vol >= 0x4000000 || sz_au > 128) {
+		// exFAT only, vol >= 64MS or sectorsPerCluster > 128S ?
+		if(opt.types == DiskPart::Type::exfat || volumeSectorCount >= 0x4000000 || sectorsPerCluster > 128) {
 			fsty = FS_EXFAT;
 			break;
 		}
 #endif
 #if FF_LBA64
 		// FAT32 volumes limited to 4GB
-		if(sz_vol >> 32 != 0) {
+		if(volumeSectorCount >> 32 != 0) {
 			return IFS::FAT::FR_MKFS_ABORTED;
 		}
 #endif
 		// Ensure AU is valid for FAT/FAT32
-		if(sz_au > 128) {
-			sz_au = 128;
+		if(sectorsPerCluster > 128) {
+			sectorsPerCluster = 128;
 		}
 		if(opt.types == DiskPart::Type::fat32) {
 			fsty = FS_FAT32;
@@ -944,13 +958,14 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 #ifdef ENABLE_EXFAT
 	if(fsty == FS_EXFAT) {
 		/* Create an exFAT volume */
-		createExFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn);
+		createExFatVolume(device, sectorSize, workBuffer, volumeStartSector, volumeSectorCount, sectorsPerCluster,
+						  sectorsPerBlock, vsn);
 
 	} else
 #endif
 	{
-		createFatVolume(device, sectorSize, workBuffer, b_vol, sz_vol, sz_au, sz_blk, vsn, fsty, opt.types, n_root,
-						n_fat);
+		createFatVolume(device, sectorSize, workBuffer, volumeStartSector, volumeSectorCount, sectorsPerCluster,
+						sectorsPerBlock, vsn, fsty, opt.types[DiskPart::Type::fat32], numRootEntries, numFats);
 	}
 
 	/* A FAT volume has been created here */
@@ -963,7 +978,7 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 	} else if(fsty == FS_FAT32) {
 		// FAT32X
 		sys = 0x0C;
-	} else if(sz_vol >= 0x10000) {
+	} else if(volumeSectorCount >= 0x10000) {
 		// FAT12/16 (large)
 		sys = 0x06;
 	} else if(fsty == FS_FAT16) {
@@ -987,7 +1002,7 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 		}
 	} else if(opt.createPartition) {
 		// Not in SFD: create partition table
-		LBA_t lba[] = {sz_vol, 0};
+		LBA_t lba[] = {volumeSectorCount, 0};
 		auto fr = create_partition(device, lba, sys, workBuffer);
 		if(fr != IFS::FAT::FR_OK) {
 			return fr;
