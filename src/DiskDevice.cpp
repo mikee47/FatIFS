@@ -453,17 +453,19 @@ FRESULT createExFatVolume(Device& device, uint16_t sectorSize, WorkBuffer& workB
 	/* Initialize the root directory */
 	workBuffer.clear();
 	auto dir = workBuffer.as<EXFAT::exfat_dentry_t[]>();
-	// Volume label entry (no label)
-	dir[0].type = EXFAT_VOLUME;
-	// Bitmap entry
-	dir[1].type = EXFAT_BITMAP;
-	dir[1].bitmap.start_clu = 2;
-	dir[1].bitmap.size = bitmapSize;
-	// Up-case table entry
-	dir[2].type = EXFAT_UPCASE;
-	dir[2].upcase.checksum = sum_case;
-	dir[2].upcase.start_clu = 2 + clusterLengths[0];
-	dir[2].upcase.size = szb_case;
+	dir[0] = EXFAT::exfat_dentry_t{EXFAT_VOLUME, .volume_label = {
+													 7,
+													 {'N', 'O', ' ', 'N', 'A', 'M', 'E'},
+												 }};
+	dir[1] = EXFAT::exfat_dentry_t{EXFAT_BITMAP, .bitmap = {
+													 .start_clu = 2,
+													 .size = bitmapSize,
+												 }};
+	dir[2] = EXFAT::exfat_dentry_t{EXFAT_UPCASE, .upcase = {
+													 .checksum = sum_case,
+													 .start_clu = 2 + clusterLengths[0],
+													 .size = szb_case,
+												 }};
 
 	sect = dataStartSector + sectorsPerCluster * (clusterLengths[0] + clusterLengths[1]);
 	nsect = sectorsPerCluster; /* Start of the root directory and number of sectors */

@@ -104,6 +104,11 @@ struct __attribute__((packed)) boot_sector_t {
 struct __attribute__((packed)) exfat_dentry_t {
 	uint8_t type;
 	union {
+		struct __attribute__((packed)) {
+			uint8_t num_chars;
+			char label[22];
+			uint8_t reserved;
+		} volume_label;
 		/* file directory entry */
 		struct __attribute__((packed)) {
 			uint8_t num_ext;
