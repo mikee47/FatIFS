@@ -17,9 +17,6 @@
 #define GPT_ALIGN 0x100000 // Alignment of partitions in GPT [byte] (>=128KB)
 #define GPT_ITEMS 128	  // Number of GPT table size (>=128, sector aligned)
 
-#define READ_SECTORS(buff, sector, count) device.read(uint64_t(sector) * sectorSize, buff, (count)*sectorSize)
-#define WRITE_SECTORS(buff, sector, count) device.write(uint64_t(sector) * sectorSize, buff, (count)*sectorSize)
-
 namespace Storage
 {
 namespace diskdefs

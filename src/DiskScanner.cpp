@@ -18,6 +18,9 @@ namespace
 {
 using namespace diskdefs;
 
+#define READ_SECTORS(buff, sector, count) device.readSectors(sectorSizeShift, buff, sector, count)
+#define WRITE_SECTORS(buff, sector, count) device.writeSectors(sectorSizeShift, buff, sector, count)
+
 String getLabel(const char* s, unsigned length)
 {
 	while(length > 0 && s[length - 1] == 0x20) {
@@ -124,12 +127,14 @@ bool DiskScanner::next(DiskPart& part)
 	if(state == State::idle) {
 #if FF_MAX_SS != FF_MIN_SS
 		sectorSize = device.getSectorSize();
-		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize & (sectorSize - 1))) {
+		sectorSizeShift = getSizeBits(sectorSize);
+		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize != 1 << sectorSizeShift)) {
 			state = State::error;
 			return false;
 		}
 #else
 		sectorSize = FF_MAX_SS;
+		sectorSizeShift = getSizeBits(FF_MAX_SS);
 #endif
 		buffer = WorkBuffer(sectorSize, 1);
 
@@ -198,7 +203,7 @@ bool DiskScanner::next(DiskPart& part)
 			if(!READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
 				continue;
 			}
-			identify(part, buffer, entry.starting_lba * sectorSize);
+			identify(part, buffer, entry.starting_lba << sectorSizeShift);
 			part.sys_ind = DiskPart::SysIndicator(entry.os_type);
 			return true;
 		}
@@ -223,7 +228,7 @@ bool DiskScanner::next(DiskPart& part)
 				continue;
 			}
 
-			identify(part, entryBuffer, entry.starting_lba * sectorSize);
+			identify(part, entryBuffer, entry.starting_lba << sectorSizeShift);
 			part.guid = Uuid(entry.unique_partition_guid);
 			part.name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
 			return true;

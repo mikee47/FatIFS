@@ -36,12 +36,13 @@ private:
 	Device& device;
 	diskdefs::WorkBuffer buffer;
 	diskdefs::WorkBuffer entryBuffer; // GPT
-	uint16_t sectorSize{0};
-	uint16_t numPartitionEntries{0};
-	uint16_t partitionIndex{0};
 	State state{};
 	uint64_t sector{0};										  // GPT
 	std::unique_ptr<diskdefs::gpt_mbr_record_t[]> mbrEntries; // MBR
+	uint16_t numPartitionEntries{0};
+	uint16_t partitionIndex{0};
+	uint16_t sectorSize{0};
+	uint8_t sectorSizeShift{0};
 };
 
 bool scanDiskPartitions(Device& device);

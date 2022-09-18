@@ -36,4 +36,6 @@ bool createPartition(Partition partition);
  */
 bool removePartition(Partition partition);
 
+int f_mkfs(Device& device, Storage::MKFS_PARM opt);
+
 } // namespace Storage
