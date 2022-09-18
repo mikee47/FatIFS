@@ -1,6 +1,7 @@
 #include "include/Storage/DiskDevice.h"
 #include "include/Storage/WorkBuffer.h"
 #include <Storage/CustomDevice.h>
+#include <IFS/TimeStamp.h>
 #include <debug_progmem.h>
 #include "diskdefs.h"
 
@@ -982,8 +983,17 @@ FRESULT f_mkfs(Device& device, Storage::MKFS_PARM opt)
 		param.type = DiskPart::Type::fat16;
 	} while(0);
 
-	// TODO: exFAT says generate this from date/time
-	param.volumeSerialNumber = os_random();
+	// exFAT says generate this from date/time
+
+	/*
+	 * https://docs.microsoft.com/en-us/windows/win32/fileio/exfat-specification#3111-volumeserialnumber-field
+	 *
+	 * 	 The VolumeSerialNumber field shall contain a unique serial number.
+	 * 	 This assists implementations to distinguish among different exFAT volumes.
+	 * 	 Implementations should generate the serial number by combining the date and time of formatting the exFAT volume.
+	 * 	 The mechanism for combining date and time to form a serial number is implementation-specific.
+	 */
+	param.volumeSerialNumber = uint32_t(param.volumeSectorCount) + IFS::fsGetTimeUTC();
 
 #ifdef ENABLE_EXFAT
 	if(param.type == DiskPart::Type::exfat) {
