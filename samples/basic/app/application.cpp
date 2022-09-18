@@ -68,7 +68,7 @@ void mountTestImage(const String& tag, const String& filename)
 
 	Storage::DiskScanner scanner(*dev);
 	for(Storage::DiskPart dp; scanner.next(dp);) {
-		Serial << dp;
+		Serial << _F("Disk Partition:") << endl << dp << endl;
 	}
 
 	Storage::scanDiskPartitions(*dev);
@@ -78,6 +78,7 @@ void mountTestImage(const String& tag, const String& filename)
 	int err = fs->mount();
 	debug_i("mount: %s", fs->getErrorString(err).c_str());
 	if(err == FS_OK) {
+		Serial.println(_F("FS info:"));
 		IFS::Debug::printFsInfo(Serial, *fs);
 		// IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
 
@@ -165,7 +166,7 @@ Storage::Partition sdinit()
 
 void fsinit()
 {
-#ifdef ARCH_HOSTxx
+#ifdef ARCH_HOST
 	DEFINE_FSTR(test_image, "test")
 	mountTestImage("TEST", test_image);
 	return;
@@ -186,7 +187,8 @@ void fsinit()
 	} else if(err == IFS::Error::BadFileSystem) {
 		debug_i("Formatting disk");
 		err = fs->format();
-		f_mkfs
+		auto fr = f_mkfs(*part.getDevice(), Storage::MKFS_PARM{});
+
 		debug_i("format: %s", fs->getErrorString(err).c_str());
 		if(!fileMountFileSystem(fs)) {
 			debug_e("Mount failed");

@@ -47,3 +47,12 @@ Configuration options
 
    Set to 1 to enable support for EXFAT volumes.
    Required if enabling :envvar:`ENABLE_STORAGE_SIZE64` option.
+
+
+Acknowledgements
+----------------
+
+- ChanN's fatfs library <http://elm-chan.org/fsw/ff/00index_e.html>`
+- Linux Kernel <https://github.com/torvalds/linux/>
+- Linux utilities https://github.com/util-linux/util-linux
+- Linux FUSE exFAT filing system implementation https://github.com/relan/exfat

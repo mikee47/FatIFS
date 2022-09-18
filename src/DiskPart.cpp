@@ -23,25 +23,30 @@ String toString(Storage::DiskPart::Type type)
 
 namespace Storage
 {
+template <typename T, typename... Args> size_t tprintln(Print& p, String tag, const T& value, Args... args)
+{
+	size_t n{0};
+	n += p.print(tag.padRight(16));
+	n += p.print(": ");
+	n += p.println(value, args...);
+	return n;
+}
+
 size_t DiskPart::printTo(Print& p) const
 {
 	size_t n{0};
-	n += p.print(_F("Type "));
-	n += p.println(type);
-	n += p.print(_F("Address 0x"));
-	n += p.println(address, HEX);
-	n += p.print(_F("Size 0x"));
-	n += p.println(size, HEX);
-	n += p.print(_F("Name "));
-	n += p.println(name);
-	n += p.print(_F("GUID "));
-	n += p.println(guid);
-	n += p.print(_F("Num Fat "));
-	n += p.println(numFat);
-	n += p.print(_F("Sector Size 0x"));
-	n += p.println(sectorSize);
-	n += p.print(_F("Cluster Size 0x"));
-	n += p.println(clusterSize);
+
+#define TPRINTLN(tag, value, ...) n += tprintln(p, F(tag), value, ##__VA_ARGS__)
+
+	TPRINTLN("Type", type);
+	TPRINTLN("Address", "0x" + String(address, HEX));
+	TPRINTLN("Size", "0x" + String(size, HEX));
+	TPRINTLN("Name", name);
+	TPRINTLN("GUID", guid);
+	TPRINTLN("Num Fat", numFat);
+	TPRINTLN("Sector Size", sectorSize);
+	TPRINTLN("Cluster Size", clusterSize);
+
 	return n;
 }
 
