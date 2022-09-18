@@ -8,8 +8,8 @@ namespace Storage
 {
 struct DiskPart {
 	enum class Type {
-		unknown,
-		invalid,
+		invalid = -1, ///< MBR invalid
+		unknown,	  ///< MBR valid but partition type not recognised
 		fat12,
 		fat16,
 		fat32,

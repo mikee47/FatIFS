@@ -40,7 +40,7 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return String(buf, outlen);
 }
 
-bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset, const gpt_entry_t* entry = nullptr)
+bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
 {
 	auto& fat = buffer.as<const FAT::fat_boot_sector_t>();
 	auto& exfat = buffer.as<const EXFAT::boot_sector_t>();
@@ -54,10 +54,6 @@ bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset, const g
 			.clusterSize = uint16_t(1 << exfat.sect_size_bits << exfat.sect_per_clus_bits),
 			.numFat = exfat.num_fats,
 		};
-		if(entry != nullptr) {
-			part.guid = Uuid(entry->unique_partition_guid);
-			part.name = unicode_to_oem(entry->partition_name, ARRAY_SIZE(entry->partition_name));
-		}
 		debug_d("[DD] Found ExFAT @ 0x%llx", offset);
 		return true;
 	}
@@ -115,6 +111,14 @@ bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset, const g
 
 } // namespace
 
+DiskScanner::DiskScanner(Device& device) : device(device)
+{
+}
+
+DiskScanner::~DiskScanner()
+{
+}
+
 bool DiskScanner::next(DiskPart& part)
 {
 	if(state == State::idle) {
@@ -146,6 +150,7 @@ bool DiskScanner::next(DiskPart& part)
 		auto& mbr = buffer.as<legacy_mbr_t>();
 		if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
 			// Load GPT header sector
+			// if(!readSectors(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
 			if(!READ_SECTORS(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
 				debug_e("[DD] GPT header read failed");
 				state = State::error;
@@ -165,24 +170,36 @@ bool DiskScanner::next(DiskPart& part)
 			entryBuffer = WorkBuffer(sectorSize, 1);
 			state = State::GPT;
 		} else {
-			numPartitionEntries = ARRAY_SIZE(partlba);
-			for(unsigned i = 0; i < numPartitionEntries; ++i) {
-				partlba[i] = mbr.partition_record[i].starting_lba;
-			}
+			auto scanEntries = [&]() {
+				unsigned n{0};
+				for(unsigned i = 0; i < ARRAY_SIZE(mbr.partition_record); ++i) {
+					auto& rec = mbr.partition_record[i];
+					if(rec.starting_lba == 0 || rec.size_in_lba == 0) {
+						continue;
+					}
+					if(mbrEntries) {
+						mbrEntries[n] = rec;
+					}
+					++n;
+				}
+				return n;
+			};
+
+			numPartitionEntries = scanEntries();
+			mbrEntries.reset(new gpt_mbr_record_t[numPartitionEntries]);
+			scanEntries();
 			state = State::MBR;
 		}
 	}
 
 	while(partitionIndex < numPartitionEntries) {
 		if(state == State::MBR) {
-			auto sect = partlba[partitionIndex++];
-			if(sect == 0) {
+			auto& entry = mbrEntries[partitionIndex++];
+			if(!READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
 				continue;
 			}
-			if(!READ_SECTORS(buffer.get(), sect, 1)) {
-				continue;
-			}
-			identify(part, buffer, sect * sectorSize);
+			identify(part, buffer, entry.starting_lba * sectorSize);
+			part.sys_ind = DiskPart::SysIndicator(entry.os_type);
 			return true;
 		}
 
@@ -206,7 +223,9 @@ bool DiskScanner::next(DiskPart& part)
 				continue;
 			}
 
-			identify(part, entryBuffer, entry.starting_lba * sectorSize, &entry);
+			identify(part, entryBuffer, entry.starting_lba * sectorSize);
+			part.guid = Uuid(entry.unique_partition_guid);
+			part.name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
 			return true;
 		}
 
@@ -225,17 +244,13 @@ bool scanDiskPartitions(Device& device)
 	DiskScanner scanner(device);
 	DiskPart part;
 	while(scanner.next(part)) {
+		if(part.type <= DiskPart::Type::unknown) {
+			continue;
+		}
 		if(part.name.length() == 0) {
 			part.name = part.guid;
 		}
-		switch(part.type) {
-		case DiskPart::Type::fat12:
-		case DiskPart::Type::fat16:
-		case DiskPart::Type::fat32:
-		case DiskPart::Type::exfat:
-			dev.createPartition(part.name, Partition::SubType::Data::fat, part.address, part.size);
-		default:; // Ignore
-		}
+		dev.createPartition(part.name, Partition::SubType::Data::fat, part.address, part.size);
 	}
 
 	return true;
