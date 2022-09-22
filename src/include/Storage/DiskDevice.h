@@ -17,13 +17,19 @@ struct MKFS_PARM {
 struct FatParam {
 	storage_size_t volumeStartSector;
 	storage_size_t volumeSectorCount;
-	uint32_t sectorsPerCluster; ///< Set to 0 for auto-calculation
-	uint32_t sectorsPerBlock;   ///< Flash erase block size
+	uint32_t sectorsPerBlock; ///< Flash erase block size
 	uint32_t volumeSerialNumber;
 	uint16_t numRootEntries;
+	uint16_t sectorsPerCluster; ///< Set to 0 for auto-calculation
 	uint8_t sectorSizeShift;
 	uint8_t numFats;
 	DiskPart::Type type;
+	//
+	uint32_t numClusters;		 // Number of clusters
+	uint32_t numFatSectors;		 // FAT size [sector]
+	uint32_t numRootDirSectors;  // Root dir size [sector]
+	uint16_t numReservedSectors; // Number of reserved sectors
+	storage_size_t fatStartSector;
 };
 
 /**
