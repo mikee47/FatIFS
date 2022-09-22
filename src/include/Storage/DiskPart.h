@@ -7,9 +7,9 @@
 namespace Storage
 {
 struct DiskPart {
-	enum class Type {
-		invalid = -1, ///< MBR invalid
-		unknown,	  ///< MBR valid but partition type not recognised
+	enum class Type : uint8_t {
+		invalid, ///< MBR invalid
+		unknown, ///< MBR valid but partition type not recognised
 		fat12,
 		fat16,
 		fat32,
@@ -29,15 +29,16 @@ struct DiskPart {
 		SI_FAT12 = 0x01,
 	};
 
-	Type type;
-	uint64_t address;
-	uint64_t size;
+	Device* device;
 	String name;
 	Uuid guid;
-	uint16_t sectorSize;  ///< Sector size (bytes)
-	uint16_t clusterSize; ///< Cluster size (bytes)
-	uint8_t numFat;		  ///< Number of FATs
-	SysIndicator sys_ind; ///< Partition sys value
+	uint64_t address;
+	uint64_t size;
+	uint16_t sectorSize;	   ///< Sector size (bytes)
+	uint16_t clusterSize;	  ///< Cluster size (bytes)
+	uint8_t numFat;			   ///< Number of FATs
+	SysIndicator sysIndicator; ///< Partition sys value
+	Type type;
 
 	bool isFat() const
 	{

@@ -20,22 +20,29 @@ struct FatParam {
 	uint32_t sectorsPerCluster; ///< Set to 0 for auto-calculation
 	uint32_t sectorsPerBlock;   ///< Flash erase block size
 	uint32_t volumeSerialNumber;
-	DiskPart::Type type;
 	uint16_t numRootEntries;
+	uint8_t sectorSizeShift;
 	uint8_t numFats;
+	DiskPart::Type type;
 };
 
 /**
  * @brief Add partition to a disk
  */
-bool createPartition(Partition partition);
+bool createPartition(Device& device, const DiskPart& partition);
 
 /**
  * @brief Remove partition from a disk
  * @param partition Describes exactly which partition to remove
  */
-bool removePartition(Partition partition);
+bool removePartition(Device& device, const DiskPart& partition);
 
-int f_mkfs(Device& device, Storage::MKFS_PARM opt);
+/**
+ * @brief Deduce disk partition parameters for given space
+ * @param partition On success, contains description of partition to be created
+ */
+bool calculatePartition(const MKFS_PARM& opt, DiskPart& partition, FatParam& param);
+
+bool formatVolume(const DiskPart& part, FatParam& param);
 
 } // namespace Storage

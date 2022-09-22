@@ -43,19 +43,20 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return String(buf, outlen);
 }
 
-bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
+bool identify(Device& device, DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
 {
 	auto& fat = buffer.as<const FAT::fat_boot_sector_t>();
 	auto& exfat = buffer.as<const EXFAT::boot_sector_t>();
 
 	if(exfat.signature == MSDOS_MBR_SIGNATURE && exfat.fs_type == FSTYPE_EXFAT) {
 		part = DiskPart{
-			.type = DiskPart::Type::exfat,
+			.device = &device,
 			.address = offset,
 			.size = exfat.vol_length << exfat.sect_size_bits,
 			.sectorSize = uint16_t(1 << exfat.sect_size_bits),
 			.clusterSize = uint16_t(1 << exfat.sect_size_bits << exfat.sect_per_clus_bits),
 			.numFat = exfat.num_fats,
+			.type = DiskPart::Type::exfat,
 		};
 		debug_d("[DD] Found ExFAT @ 0x%llx", offset);
 		return true;
@@ -66,13 +67,14 @@ bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
 	if(b == 0xEB || b == 0xE9 || b == 0xE8) {
 		if(fat.signature == MSDOS_MBR_SIGNATURE && fat.fat32.fs_type == FSTYPE_FAT32) {
 			part = DiskPart{
-				.type = DiskPart::Type::fat32,
+				.device = &device,
+				.name = getLabel(fat.fat32.vol_label, MSDOS_NAME),
 				.address = offset,
 				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
-				.name = getLabel(fat.fat32.vol_label, MSDOS_NAME),
 				.sectorSize = fat.sector_size,
 				.clusterSize = uint16_t(fat.sector_size * fat.sec_per_clus),
 				.numFat = fat.num_fats,
+				.type = DiskPart::Type::fat32,
 			};
 			debug_d("[DD] Found FAT32 @ 0x%luu", offset);
 			return true;
@@ -90,13 +92,14 @@ bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
 		   && fat.fat_length != 0) {							// Properness of FAT size (MNBZ)
 			auto nclst = fat.sector_size * fat.sec_per_clus;
 			part = DiskPart{
-				.type = (nclst <= MAX_FAT12) ? DiskPart::Type::fat12 : DiskPart::Type::fat16,
+				.device = &device,
+				.name = getLabel(fat.fat16.vol_label, MSDOS_NAME),
 				.address = offset,
 				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
-				.name = getLabel(fat.fat16.vol_label, MSDOS_NAME),
 				.sectorSize = fat.sector_size,
 				.clusterSize = uint16_t(fat.sector_size * fat.sec_per_clus),
 				.numFat = fat.num_fats,
+				.type = (nclst <= MAX_FAT12) ? DiskPart::Type::fat12 : DiskPart::Type::fat16,
 			};
 			debug_d("[DD] Found FAT @ 0x%luu", offset);
 			return true;
@@ -104,11 +107,19 @@ bool identify(DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
 	}
 
 	if(fat.signature == MSDOS_MBR_SIGNATURE) {
-		part.type = DiskPart::Type::unknown;
+		part = DiskPart{
+			.device = &device,
+			.address = offset,
+			.type = DiskPart::Type::unknown,
+		};
 		return false;
 	}
 
-	part.type = DiskPart::Type::invalid;
+	part = DiskPart{
+		.device = &device,
+		.address = offset,
+		.type = DiskPart::Type::invalid,
+	};
 	return true;
 }
 
@@ -144,7 +155,7 @@ bool DiskScanner::next(DiskPart& part)
 			return false;
 		}
 
-		if(identify(part, buffer, 0)) {
+		if(identify(device, part, buffer, 0)) {
 			state = State::done;
 			return true;
 		}
@@ -203,8 +214,8 @@ bool DiskScanner::next(DiskPart& part)
 			if(!READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
 				continue;
 			}
-			identify(part, buffer, entry.starting_lba << sectorSizeShift);
-			part.sys_ind = DiskPart::SysIndicator(entry.os_type);
+			identify(device, part, buffer, entry.starting_lba << sectorSizeShift);
+			part.sysIndicator = DiskPart::SysIndicator(entry.os_type);
 			return true;
 		}
 
@@ -228,7 +239,7 @@ bool DiskScanner::next(DiskPart& part)
 				continue;
 			}
 
-			identify(part, entryBuffer, entry.starting_lba << sectorSizeShift);
+			identify(device, part, entryBuffer, entry.starting_lba << sectorSizeShift);
 			part.guid = Uuid(entry.unique_partition_guid);
 			part.name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
 			return true;
