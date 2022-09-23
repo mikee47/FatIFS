@@ -6,8 +6,10 @@
 
 namespace Storage
 {
-struct DiskPart {
-	enum class Type : uint8_t {
+class DiskPart : public Partition
+{
+public:
+	enum class SysType : uint8_t {
 		invalid, ///< MBR invalid
 		unknown, ///< MBR valid but partition type not recognised
 		fat12,
@@ -15,7 +17,7 @@ struct DiskPart {
 		fat32,
 		exfat,
 	};
-	using Types = BitSet<uint8_t, DiskPart::Type>;
+	using SysTypes = BitSet<uint8_t, SysType>;
 
 	/**
 	 * @brief MBR partition system type indicator values
@@ -29,20 +31,28 @@ struct DiskPart {
 		SI_FAT12 = 0x01,
 	};
 
-	Device* device;
-	String name;
-	Uuid guid;
-	uint64_t address;
-	uint64_t size;
-	uint16_t sectorSize;	   ///< Sector size (bytes)
-	uint16_t clusterSize;	  ///< Cluster size (bytes)
-	uint8_t numFat;			   ///< Number of FATs
-	SysIndicator sysIndicator; ///< Partition sys value
-	Type type;
+	struct Info : public Partition::Info {
+		Uuid guid;
+		uint32_t clusterSize{}; ///< Cluster size (bytes)
+		uint16_t sectorSize{};  ///< Sector size (bytes)
+		SysType systype{};
+		SysIndicator sysind{}; ///< Partition sys value
 
-	bool isFat() const
+		template <typename... Args> Info(Args... args) : Partition::Info(args...)
+		{
+			infosize = sizeof(Info);
+		}
+
+		bool isFat() const
+		{
+			return (SysType::fat12 | SysType::fat16 | SysType::fat32 | SysType::exfat)[systype];
+		}
+	};
+
+	using Partition::Partition;
+
+	DiskPart(Partition other) : Partition(other)
 	{
-		return (Type::fat12 | Type::fat16 | Type::fat32 | Type::exfat)[type];
 	}
 
 	size_t printTo(Print& p) const;
@@ -50,4 +60,4 @@ struct DiskPart {
 
 } // namespace Storage
 
-String toString(Storage::DiskPart::Type type);
+String toString(Storage::DiskPart::SysType type);

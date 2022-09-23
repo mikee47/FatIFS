@@ -43,41 +43,34 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return String(buf, outlen);
 }
 
-bool identify(Device& device, DiskPart& part, const WorkBuffer& buffer, uint64_t offset)
+DiskPart::Info* identify(Device& device, const WorkBuffer& buffer, uint64_t offset)
 {
 	auto& fat = buffer.as<const FAT::fat_boot_sector_t>();
 	auto& exfat = buffer.as<const EXFAT::boot_sector_t>();
 
 	if(exfat.signature == MSDOS_MBR_SIGNATURE && exfat.fs_type == FSTYPE_EXFAT) {
-		part = DiskPart{
-			.device = &device,
-			.address = offset,
-			.size = exfat.vol_length << exfat.sect_size_bits,
-			.sectorSize = uint16_t(1 << exfat.sect_size_bits),
-			.clusterSize = uint16_t(1 << exfat.sect_size_bits << exfat.sect_per_clus_bits),
-			.numFat = exfat.num_fats,
-			.type = DiskPart::Type::exfat,
-		};
+		auto part = new DiskPart::Info(nullptr, Partition::SubType::Data::fat, offset,
+									   exfat.vol_length << exfat.sect_size_bits, 0);
+		part->systype = DiskPart::SysType::exfat;
+		part->sectorSize = 1U << exfat.sect_size_bits;
+		part->clusterSize = 1U << exfat.sect_size_bits << exfat.sect_per_clus_bits;
+		// part->numFat = exfat.num_fats;
 		debug_d("[DD] Found ExFAT @ 0x%llx", offset);
-		return true;
+		return part;
 	}
 
 	// Valid JumpBoot code? (short jump, near jump or near call)
 	auto b = fat.jmp_boot[0];
 	if(b == 0xEB || b == 0xE9 || b == 0xE8) {
 		if(fat.signature == MSDOS_MBR_SIGNATURE && fat.fat32.fs_type == FSTYPE_FAT32) {
-			part = DiskPart{
-				.device = &device,
-				.name = getLabel(fat.fat32.vol_label, MSDOS_NAME),
-				.address = offset,
-				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
-				.sectorSize = fat.sector_size,
-				.clusterSize = uint16_t(fat.sector_size * fat.sec_per_clus),
-				.numFat = fat.num_fats,
-				.type = DiskPart::Type::fat32,
-			};
+			auto part = new DiskPart::Info(getLabel(fat.fat32.vol_label, MSDOS_NAME), Partition::SubType::Data::fat,
+										   offset, (fat.sectors ?: fat.total_sect) * fat.sector_size, 0);
+			part->systype = DiskPart::SysType::fat32;
+			part->sectorSize = fat.sector_size;
+			part->clusterSize = uint16_t(fat.sector_size * fat.sec_per_clus);
+			// part->numFat = fat.num_fats;
 			debug_d("[DD] Found FAT32 @ 0x%luu", offset);
-			return true;
+			return part;
 		}
 
 		// FAT volumes formatted with early MS-DOS lack signature/fs_type
@@ -90,37 +83,25 @@ bool identify(Device& device, DiskPart& part, const WorkBuffer& buffer, uint64_t
 		   && fat.dir_entries != 0								// Properness of root dir entries (MNBZ)
 		   && (fat.sectors >= 128 || fat.total_sect >= 0x10000) // Properness of volume sectors (>=128)
 		   && fat.fat_length != 0) {							// Properness of FAT size (MNBZ)
-			auto nclst = fat.sector_size * fat.sec_per_clus;
-			part = DiskPart{
-				.device = &device,
-				.name = getLabel(fat.fat16.vol_label, MSDOS_NAME),
-				.address = offset,
-				.size = (fat.sectors ?: fat.total_sect) * fat.sector_size,
-				.sectorSize = fat.sector_size,
-				.clusterSize = uint16_t(fat.sector_size * fat.sec_per_clus),
-				.numFat = fat.num_fats,
-				.type = (nclst <= MAX_FAT12) ? DiskPart::Type::fat12 : DiskPart::Type::fat16,
-			};
+			auto part = new DiskPart::Info(getLabel(fat.fat16.vol_label, MSDOS_NAME), Partition::SubType::Data::fat,
+										   offset, (fat.sectors ?: fat.total_sect) * fat.sector_size, 0);
+			part->clusterSize = uint16_t(fat.sector_size * fat.sec_per_clus);
+			auto numClusters = part->size / part->clusterSize;
+			part->systype = (numClusters <= MAX_FAT12) ? DiskPart::SysType::fat12 : DiskPart::SysType::fat16;
+			part->sectorSize = fat.sector_size;
+			// part->numFat = fat.num_fats;
 			debug_d("[DD] Found FAT @ 0x%luu", offset);
-			return true;
+			return part;
 		}
 	}
 
 	if(fat.signature == MSDOS_MBR_SIGNATURE) {
-		part = DiskPart{
-			.device = &device,
-			.address = offset,
-			.type = DiskPart::Type::unknown,
-		};
-		return false;
+		auto part = new DiskPart::Info(nullptr, Partition::Type::invalid, Partition::SubType::invalid, offset, 0, 0);
+		part->systype = DiskPart::SysType::unknown;
+		return part;
 	}
 
-	part = DiskPart{
-		.device = &device,
-		.address = offset,
-		.type = DiskPart::Type::invalid,
-	};
-	return true;
+	return nullptr;
 }
 
 } // namespace
@@ -133,7 +114,7 @@ DiskScanner::~DiskScanner()
 {
 }
 
-bool DiskScanner::next(DiskPart& part)
+std::unique_ptr<DiskPart::Info> DiskScanner::next()
 {
 	if(state == State::idle) {
 #if FF_MAX_SS != FF_MIN_SS
@@ -141,7 +122,7 @@ bool DiskScanner::next(DiskPart& part)
 		sectorSizeShift = getSizeBits(sectorSize);
 		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize != 1 << sectorSizeShift)) {
 			state = State::error;
-			return false;
+			return nullptr;
 		}
 #else
 		sectorSize = FF_MAX_SS;
@@ -152,13 +133,15 @@ bool DiskScanner::next(DiskPart& part)
 		// Load sector 0 and check it
 		if(!READ_SECTORS(buffer.get(), 0, 1)) {
 			state = State::error;
-			return false;
+			return nullptr;
 		}
 
-		if(identify(device, part, buffer, 0)) {
+		auto part = identify(device, buffer, 0);
+		if(!part || part->systype != DiskPart::SysType::unknown) {
 			state = State::done;
-			return true;
+			return std::unique_ptr<DiskPart::Info>(part);
 		}
+		delete part;
 
 		/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
 
@@ -170,13 +153,13 @@ bool DiskScanner::next(DiskPart& part)
 			if(!READ_SECTORS(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
 				debug_e("[DD] GPT header read failed");
 				state = State::error;
-				return false;
+				return nullptr;
 			}
 			auto& gpt = buffer.as<gpt_header_t>();
 			if(!verifyGptHeader(gpt)) {
 				debug_e("[DD] GPT invalid");
 				state = State::error;
-				return false;
+				return nullptr;
 			}
 
 			// Scan partition table
@@ -214,9 +197,9 @@ bool DiskScanner::next(DiskPart& part)
 			if(!READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
 				continue;
 			}
-			identify(device, part, buffer, entry.starting_lba << sectorSizeShift);
-			part.sysIndicator = DiskPart::SysIndicator(entry.os_type);
-			return true;
+			auto part = identify(device, buffer, entry.starting_lba << sectorSizeShift);
+			part->sysind = DiskPart::SysIndicator(entry.os_type);
+			return std::unique_ptr<DiskPart::Info>(part);
 		}
 
 		if(state == State::GPT) {
@@ -224,7 +207,7 @@ bool DiskScanner::next(DiskPart& part)
 			if(partitionIndex % entriesPerSector == 0) {
 				if(!READ_SECTORS(buffer.get(), sector++, 1)) {
 					state = State::error;
-					return false;
+					return nullptr;
 				}
 			}
 
@@ -239,34 +222,35 @@ bool DiskScanner::next(DiskPart& part)
 				continue;
 			}
 
-			identify(device, part, entryBuffer, entry.starting_lba << sectorSizeShift);
-			part.guid = Uuid(entry.unique_partition_guid);
-			part.name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
-			return true;
+			auto part = identify(device, entryBuffer, entry.starting_lba << sectorSizeShift);
+			part->guid = Uuid(entry.unique_partition_guid);
+			part->name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
+			return std::unique_ptr<DiskPart::Info>(part);
 		}
 
 		assert(false);
 		state = State::error;
-		return false;
+		return nullptr;
 	}
 
 	state = State::done;
-	return false;
+	return nullptr;
 }
 
 bool scanDiskPartitions(Device& device)
 {
 	auto& dev = static_cast<CustomDevice&>(device);
+
 	DiskScanner scanner(device);
-	DiskPart part;
-	while(scanner.next(part)) {
-		if(part.type <= DiskPart::Type::unknown) {
+	std::unique_ptr<DiskPart::Info> part;
+	while((part = scanner.next())) {
+		if(part->systype <= DiskPart::SysType::unknown) {
 			continue;
 		}
-		if(part.name.length() == 0) {
-			part.name = part.guid;
+		if(part->name.length() == 0) {
+			part->name = part->guid;
 		}
-		dev.createPartition(part.name, Partition::SubType::Data::fat, part.address, part.size);
+		dev.createPartition(part.release());
 	}
 
 	return true;

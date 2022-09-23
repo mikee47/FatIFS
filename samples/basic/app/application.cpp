@@ -66,12 +66,12 @@ void mountTestImage(const String& tag, const String& filename)
 	auto dev = new Storage::FileDevice(tag, hfs, f);
 	Storage::registerDevice(dev);
 
-	Storage::DiskScanner scanner(*dev);
-	for(Storage::DiskPart dp; scanner.next(dp);) {
-		Serial << _F("Disk Partition:") << endl << dp << endl;
+	Storage::scanDiskPartitions(*dev);
+
+	for(auto part : Storage::findPartition()) {
+		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
 	}
 
-	Storage::scanDiskPartitions(*dev);
 
 	auto part = *dev->partitions().begin();
 	auto fs = IFS::createFatFilesystem(part);
@@ -187,7 +187,7 @@ void fsinit()
 	} else if(err == IFS::Error::BadFileSystem) {
 		debug_i("Formatting disk");
 		err = fs->format();
-		auto fr = f_mkfs(*part.getDevice(), Storage::MKFS_PARM{});
+		// auto fr = f_mkfs(*part.getDevice(), Storage::MKFS_PARM{});
 
 		debug_i("format: %s", fs->getErrorString(err).c_str());
 		if(!fileMountFileSystem(fs)) {

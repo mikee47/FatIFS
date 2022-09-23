@@ -22,7 +22,7 @@ public:
 		partitionIndex = 0;
 	}
 
-	bool next(DiskPart& part);
+	std::unique_ptr<DiskPart::Info> next();
 
 private:
 	enum class State {

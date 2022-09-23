@@ -1,8 +1,8 @@
 #include "include/Storage/DiskPart.h"
 
-String toString(Storage::DiskPart::Type type)
+String toString(Storage::DiskPart::SysType type)
 {
-	using Type = Storage::DiskPart::Type;
+	using Type = Storage::DiskPart::SysType;
 	switch(type) {
 	case Type::unknown:
 		return F("unknown");
@@ -34,18 +34,29 @@ template <typename T, typename... Args> size_t tprintln(Print& p, String tag, co
 
 size_t DiskPart::printTo(Print& p) const
 {
-	size_t n{0};
+	size_t n = Partition::printTo(p);
+
+	if(mPart == nullptr || mPart->infosize != sizeof(Info)) {
+		return n;
+	}
+
+	n += p.println();
+
+	auto& info = *static_cast<const Info*>(mPart);
 
 #define TPRINTLN(tag, value, ...) n += tprintln(p, F(tag), value, ##__VA_ARGS__)
 
-	TPRINTLN("Type", type);
-	TPRINTLN("Address", "0x" + String(address, HEX));
-	TPRINTLN("Size", "0x" + String(size, HEX));
-	TPRINTLN("Name", name);
-	TPRINTLN("GUID", guid);
-	TPRINTLN("Num Fat", numFat);
-	TPRINTLN("Sector Size", sectorSize);
-	TPRINTLN("Cluster Size", clusterSize);
+	TPRINTLN("Sys Type", info.systype);
+	if(info.guid) {
+		TPRINTLN("GUID", info.guid);
+	}
+	if(info.sysind) {
+		TPRINTLN("Sys Indicator", String(info.sysind, HEX, 2));
+	}
+	if(info.sectorSize || info.clusterSize) {
+		TPRINTLN("Sector Size", info.sectorSize);
+		TPRINTLN("Cluster Size", info.clusterSize);
+	}
 
 	return n;
 }
