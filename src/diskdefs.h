@@ -17,6 +17,8 @@
 #define GPT_ALIGN 0x100000 // Alignment of partitions in GPT [byte] (>=128KB)
 #define GPT_ITEMS 128	  // Number of GPT table size (>=128, sector aligned)
 
+#define OSTYPE_EXTENDED 0x05
+
 namespace Storage
 {
 namespace diskdefs

@@ -33,6 +33,8 @@ private:
 		done,
 	};
 
+	unsigned scanMbrEntries(uint32_t baseLba);
+
 	Device& device;
 	diskdefs::WorkBuffer buffer;
 	diskdefs::WorkBuffer entryBuffer; // GPT

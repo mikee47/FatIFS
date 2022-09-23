@@ -114,6 +114,22 @@ DiskScanner::~DiskScanner()
 {
 }
 
+unsigned DiskScanner::scanMbrEntries(uint32_t baseLba)
+{
+	auto& mbr = buffer.as<legacy_mbr_t>();
+	unsigned n{0};
+	for(unsigned i = 0; i < ARRAY_SIZE(mbr.partition_record); ++i) {
+		auto& rec = mbr.partition_record[i];
+		if(rec.starting_lba == 0 || rec.size_in_lba == 0) {
+			continue;
+		}
+		mbrEntries[n] = rec;
+		mbrEntries[n].starting_lba += baseLba;
+		++n;
+	}
+	return n;
+}
+
 std::unique_ptr<DiskPart::Info> DiskScanner::next()
 {
 	if(state == State::idle) {
@@ -147,6 +163,7 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 
 		// GPT protective MBR?
 		auto& mbr = buffer.as<legacy_mbr_t>();
+
 		if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
 			// Load GPT header sector
 			// if(!readSectors(buffer.get(), GPT_PRIMARY_PARTITION_TABLE_LBA, 1)) {
@@ -169,24 +186,8 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 			entryBuffer = WorkBuffer(sectorSize, 1);
 			state = State::GPT;
 		} else {
-			auto scanEntries = [&]() {
-				unsigned n{0};
-				for(unsigned i = 0; i < ARRAY_SIZE(mbr.partition_record); ++i) {
-					auto& rec = mbr.partition_record[i];
-					if(rec.starting_lba == 0 || rec.size_in_lba == 0) {
-						continue;
-					}
-					if(mbrEntries) {
-						mbrEntries[n] = rec;
-					}
-					++n;
-				}
-				return n;
-			};
-
-			numPartitionEntries = scanEntries();
-			mbrEntries.reset(new gpt_mbr_record_t[numPartitionEntries]);
-			scanEntries();
+			mbrEntries.reset(new gpt_mbr_record_t[4]);
+			numPartitionEntries = scanMbrEntries(0);
 			state = State::MBR;
 		}
 	}
@@ -195,6 +196,11 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 		if(state == State::MBR) {
 			auto& entry = mbrEntries[partitionIndex++];
 			if(!READ_SECTORS(buffer.get(), entry.starting_lba, 1)) {
+				continue;
+			}
+			if(entry.os_type == OSTYPE_EXTENDED) {
+				numPartitionEntries = scanMbrEntries(entry.starting_lba);
+				partitionIndex = 0;
 				continue;
 			}
 			auto part = identify(device, buffer, entry.starting_lba << sectorSizeShift);
