@@ -60,9 +60,12 @@ void mountTestImage(const String& tag, const String& filename)
 	auto& hfs = IFS::Host::getFileSystem();
 	auto f = hfs.open(filename, IFS::File::ReadOnly);
 	if(f < 0) {
-		debug_e("Failed to open '%s': %s", filename.c_str(), hfs.getErrorString(f).c_str());
+		Serial << _F("Failed to open '") << filename << ": " << hfs.getErrorString(f) << endl;
 		return;
 	}
+
+	Serial << _F("Mounted '") << filename << '\'' << endl;
+
 	auto dev = new Storage::FileDevice(tag, hfs, f);
 	Storage::registerDevice(dev);
 
@@ -72,28 +75,30 @@ void mountTestImage(const String& tag, const String& filename)
 		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
 	}
 
+	for(auto part : dev->partitions()) {
+		auto fs = IFS::createFatFilesystem(part);
+		int err = fs->mount();
+		debug_i("mount: %s", fs->getErrorString(err).c_str());
+		if(err == FS_OK) {
+			Serial.println(_F("FS info:"));
+			IFS::Debug::printFsInfo(Serial, *fs);
+			IFS::Debug::listDirectory(Serial, *fs, nullptr); //, IFS::Debug::Option::recurse);
 
-	auto part = *dev->partitions().begin();
-	auto fs = IFS::createFatFilesystem(part);
-	int err = fs->mount();
-	debug_i("mount: %s", fs->getErrorString(err).c_str());
-	if(err == FS_OK) {
-		Serial.println(_F("FS info:"));
-		IFS::Debug::printFsInfo(Serial, *fs);
-		// IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
+			// listDirectoryAsync(fs, nullptr);
+			// return;
 
-		listDirectoryAsync(fs, nullptr);
-		return;
+			FileStream file(fs);
+			file.open(F("Sming/README.rst"));
+			Serial.copyFrom(&file);
+		}
+		delete fs;
 
-		FileStream file(fs);
-		file.open(F("Sming/README.rst"));
-		Serial.copyFrom(&file);
+		Serial.println();
 	}
 
-	Storage::Debug::listPartitions(Serial);
-
-	delete fs;
 	delete dev;
+
+	Storage::Debug::listPartitions(Serial);
 }
 #endif
 
@@ -167,8 +172,8 @@ Storage::Partition sdinit()
 void fsinit()
 {
 #ifdef ARCH_HOST
-	DEFINE_FSTR(test_image, "test")
-	mountTestImage("TEST", test_image);
+	mountTestImage("TEST", "test");
+	mountTestImage("TEST2", "test2");
 	return;
 #endif
 
