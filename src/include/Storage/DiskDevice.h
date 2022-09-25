@@ -15,8 +15,6 @@ struct MKFS_PARM {
 };
 
 struct FatParam {
-	storage_size_t volumeStartSector;
-	storage_size_t volumeSectorCount;
 	uint32_t sectorsPerBlock; ///< Flash erase block size
 	uint32_t volumeSerialNumber;
 	uint16_t numRootEntries;
