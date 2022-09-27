@@ -400,7 +400,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 #endif
 
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
-		return partition.writeSectors(sectorSizeShift, buff, sector, count);
+		return partition.write(sector << sectorSizeShift, buff, count << sectorSizeShift);
 	};
 
 	/* Create a compressed up-case table */
@@ -745,7 +745,7 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 #endif
 
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
-		return partition.writeSectors(sectorSizeShift, buff, sector, count);
+		return partition.write(sector << sectorSizeShift, buff, count << sectorSizeShift);
 	};
 
 	/* Create FAT VBR */
@@ -862,8 +862,10 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 
 } // namespace
 
-bool calculatePartition(const MKFS_PARM& opt, DiskPart& partition, FatParam& param)
+bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param)
 {
+	param = FatParam{};
+
 	/* Get physical drive status (sz_drv, sectorsPerBlock, sectorSize) */
 	uint16_t sectorSize;
 #if FF_MAX_SS != FF_MIN_SS
@@ -898,7 +900,7 @@ bool calculatePartition(const MKFS_PARM& opt, DiskPart& partition, FatParam& par
 	} else {
 		// Round up requested cluster size to nearest power of 2
 		auto clusterSize = 0x80000000U >> __builtin_clz(opt.clusterSize);
-		clusterSize = std::max(0x1000000U, clusterSize);
+		clusterSize = std::min(0x1000000U, clusterSize);
 		param.sectorsPerCluster = clusterSize >> param.sectorSizeShift;
 	}
 

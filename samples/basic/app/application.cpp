@@ -100,6 +100,64 @@ void mountTestImage(const String& tag, const String& filename)
 
 	Storage::Debug::listPartitions(Serial);
 }
+
+void createTestImage(const String& tag, const String& filename)
+{
+	auto& hfs = IFS::Host::getFileSystem();
+
+	auto f = hfs.open(filename, File::CreateNewAlways | File::ReadWrite);
+	if(f < 0) {
+		Serial << _F("Failed to open '") << filename << ": " << hfs.getErrorString(f) << endl;
+		return;
+	}
+	hfs.ftruncate(f, 100 * 1024 * 1024);
+
+	Serial << _F("Mounted '") << filename << '\'' << endl;
+
+	auto dev = new Storage::FileDevice(tag, hfs, f);
+	Storage::registerDevice(dev);
+
+	auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
+
+	Storage::MKFS_PARM opt{
+		.types = Storage::DiskPart::SysType::fat16,
+		.clusterSize = 4096,
+	};
+	Storage::FatParam param;
+	bool ok = Storage::calculatePartition(opt, part, param);
+	Serial << "calculatePartition " << (ok ? "OK" : "FAIL") << endl;
+	ok = Storage::formatVolume(part, param);
+	Serial << "formatVolume " << (ok ? "OK" : "FAIL") << endl;
+
+	for(auto part : Storage::findPartition()) {
+		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
+	}
+
+	for(auto part : dev->partitions()) {
+		auto fs = IFS::createFatFilesystem(part);
+		int err = fs->mount();
+		debug_i("mount: %s", fs->getErrorString(err).c_str());
+		if(err == FS_OK) {
+			Serial.println(_F("FS info:"));
+			IFS::Debug::printFsInfo(Serial, *fs);
+			IFS::Debug::listDirectory(Serial, *fs, nullptr); //, IFS::Debug::Option::recurse);
+
+			// listDirectoryAsync(fs, nullptr);
+			// return;
+
+			FileStream file(fs);
+			file.open(F("Sming/README.rst"));
+			Serial.copyFrom(&file);
+		}
+		delete fs;
+
+		Serial.println();
+	}
+
+	delete dev;
+
+	Storage::Debug::listPartitions(Serial);
+}
 #endif
 
 bool fscopy(const char* srcFile)
@@ -172,9 +230,12 @@ Storage::Partition sdinit()
 void fsinit()
 {
 #ifdef ARCH_HOST
-	mountTestImage("TEST", "test");
-	mountTestImage("TEST2", "test2");
-	return;
+	// mountTestImage("TEST", "test");
+	// mountTestImage("TEST2", "test2");
+	// return;
+
+	createTestImage("GENTEST", "gentest.img");
+
 #endif
 
 	auto part = sdinit();

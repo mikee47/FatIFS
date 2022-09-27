@@ -18,8 +18,8 @@ namespace
 {
 using namespace diskdefs;
 
-#define READ_SECTORS(buff, sector, count) device.readSectors(sectorSizeShift, buff, sector, count)
-#define WRITE_SECTORS(buff, sector, count) device.writeSectors(sectorSizeShift, buff, sector, count)
+#define READ_SECTORS(buff, sector, count) device.read(sector << sectorSizeShift, buff, count << sectorSizeShift)
+#define WRITE_SECTORS(buff, sector, count) device.write(sector << sectorSizeShift, buff, count << sectorSizeShift)
 
 String getLabel(const char* s, unsigned length)
 {

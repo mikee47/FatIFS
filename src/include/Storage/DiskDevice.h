@@ -46,7 +46,7 @@ bool removePartition(DiskPart partition);
  * @brief Deduce disk partition parameters for given space
  * @param partition On success, contains description of partition to be created
  */
-bool calculatePartition(const MKFS_PARM& opt, DiskPart& partition, FatParam& param);
+bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param);
 
 bool formatVolume(Partition partition, const FatParam& param);
 
