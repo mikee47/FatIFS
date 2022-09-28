@@ -414,6 +414,7 @@ int FileSystem::getinfo(Info& info)
 	default:
 		info.type = Type::Unknown;
 	}
+	info.attr = Attribute::NoMeta;
 	info.maxNameLength = FF_MAX_LFN;
 	info.maxPathLength = UINT16_MAX;
 	if(mounted) {
