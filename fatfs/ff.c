@@ -176,6 +176,8 @@
 #define XDIR_FstClus		52		/* exFAT: First cluster of the file data (DWORD) */
 #define XDIR_FileSize		56		/* exFAT: File/Directory size (QWORD) */
 
+#define TZ_UTC              0x80    /* exFAT: Value for timezone field indicating time is UTC */
+
 #define SZDIRE				32		/* Size of a directory entry */
 #define DDEM				0xE5	/* Deleted directory entry mark set to DIR_Name[0] */
 #define RDDEM				0x05	/* Replacement of the character collides with DDEM */
@@ -3378,6 +3380,7 @@ FRESULT f_open (
 					memset(fs->dirbuf + 38, 0, 26);	/* Clear C0 entry except for NumName and NameHash */
 					fs->dirbuf[XDIR_Attr] = AM_ARC;
 					st_dword(fs->dirbuf + XDIR_CrtTime, fp->obj.modtime);
+					st_dword(fs->dirbuf + XDIR_CrtTZ, TZ_UTC);
 					fs->dirbuf[XDIR_GenFlags] = 1;
 					res = store_xdir(&dj);
 					if (res == FR_OK && fp->obj.sclust != 0) {	/* Remove the cluster chain if exist */
@@ -3391,6 +3394,7 @@ FRESULT f_open (
 					tm = GET_FATTIME();					/* Set created time */
 					st_dword(dj.dir + DIR_CrtTime, tm);
 					st_dword(dj.dir + DIR_ModTime, tm);
+					st_word(dj.dir + DIR_LstAccDate, tm >> 16);
 					cl = ld_clust(fs, dj.dir);			/* Get current cluster chain */
 					dj.dir[DIR_Attr] = AM_ARC;			/* Reset attribute */
 					st_clust(fs, dj.dir, 0);			/* Reset file allocation info */
@@ -3769,8 +3773,10 @@ FRESULT f_sync (
 						st_qword(fs->dirbuf + XDIR_FileSize, fp->obj.objsize);		/* Update file size */
 						st_qword(fs->dirbuf + XDIR_ValidFileSize, fp->obj.objsize);	/* (FatFs does not support Valid File Size feature) */
 						st_dword(fs->dirbuf + XDIR_ModTime, tm);		/* Update modified time */
+						st_dword(fs->dirbuf + XDIR_ModTZ, TZ_UTC);
 						fs->dirbuf[XDIR_ModTime10] = 0;
-						st_dword(fs->dirbuf + XDIR_AccTime, 0);
+						st_dword(fs->dirbuf + XDIR_AccTime, tm);
+						st_dword(fs->dirbuf + XDIR_AccTZ, TZ_UTC);
 						res = store_xdir(&dj);	/* Restore it to the directory */
 						if (res == FR_OK) {
 							res = sync_fs(fs);
@@ -3789,7 +3795,7 @@ FRESULT f_sync (
 					st_clust(fp->obj.fs, dir, fp->obj.sclust);		/* Update file allocation information  */
 					st_dword(dir + DIR_FileSize, (DWORD)fp->obj.objsize);	/* Update file size */
 					st_dword(dir + DIR_ModTime, tm);				/* Update modified time */
-					st_word(dir + DIR_LstAccDate, 0);
+					st_word(dir + DIR_LstAccDate, tm >> 16);
 					fs->wflag = 1;
 					res = sync_fs(fs);					/* Restore it to the directory */
 					fp->flag &= (BYTE)~FA_MODIFIED;
@@ -4681,6 +4687,7 @@ FRESULT f_mkdir (
 						fs->win[DIR_Name] = '.';
 						fs->win[DIR_Attr] = AM_DIR;
 						st_dword(fs->win + DIR_ModTime, tm);
+						st_word(fs->win + DIR_LstAccDate, tm >> 16);
 						st_clust(fs, fs->win, dcl);
 						memcpy(fs->win + SZDIRE, fs->win, SZDIRE);	/* Create ".." entry */
 						fs->win[SZDIRE + 1] = '.'; pcl = dj.obj.sclust;
@@ -4694,6 +4701,7 @@ FRESULT f_mkdir (
 #if FF_FS_EXFAT
 				if (fs->fs_type == FS_EXFAT) {	/* Initialize directory entry block */
 					st_dword(fs->dirbuf + XDIR_ModTime, tm);	/* Created time */
+					st_dword(fs->dirbuf + XDIR_ModTZ, TZ_UTC);
 					st_dword(fs->dirbuf + XDIR_FstClus, dcl);	/* Table start cluster */
 					st_dword(fs->dirbuf + XDIR_FileSize, (DWORD)fs->csize * SS(fs));	/* Directory size needs to be valid */
 					st_dword(fs->dirbuf + XDIR_ValidFileSize, (DWORD)fs->csize * SS(fs));
@@ -4704,6 +4712,7 @@ FRESULT f_mkdir (
 #endif
 				{
 					st_dword(dj.dir + DIR_ModTime, tm);	/* Created time */
+					st_word(dj.dir + DIR_LstAccDate, tm >> 16);
 					st_clust(fs, dj.dir, dcl);			/* Table start cluster */
 					dj.dir[DIR_Attr] = AM_DIR;			/* Attribute */
 					fs->wflag = 1;
@@ -4905,11 +4914,13 @@ FRESULT f_utime (
 #if FF_FS_EXFAT
 			if (fs->fs_type == FS_EXFAT) {
 				st_dword(fs->dirbuf + XDIR_ModTime, (DWORD)fno->fdate << 16 | fno->ftime);
+				st_dword(fs->dirbuf + XDIR_ModTZ, TZ_UTC);
 				res = store_xdir(&dj);
 			} else
 #endif
 			{
 				st_dword(dj.dir + DIR_ModTime, (DWORD)fno->fdate << 16 | fno->ftime);
+				st_word(dj.dir + DIR_LstAccDate, fno->fdate);
 				fs->wflag = 1;
 			}
 			if (res == FR_OK) {
