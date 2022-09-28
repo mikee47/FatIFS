@@ -54,6 +54,44 @@ void listDirectoryAsync(IFS::FileSystem* fs, const String& path)
 	enumCallback(e);
 }
 
+bool fscopy(Storage::Partition fwfsPart, IFS::FileSystem& dstfs)
+{
+	auto srcfs = IFS::createFirmwareFilesystem(fwfsPart);
+	if(srcfs == nullptr) {
+		debug_e("Source FWFS filesystem not set");
+		return false;
+	}
+	srcfs->mount();
+
+	IFS::Profiler profiler;
+	dstfs.setProfiler(&profiler);
+	IFS::FileCopier copier(*srcfs, dstfs);
+
+	copier.onError([](const auto& info) -> bool {
+		Serial << info << endl;
+		return true;
+	});
+
+	bool res = copier.copyDir(nullptr, nullptr);
+	dstfs.setProfiler(nullptr);
+
+	IFS::FileSystem::Info srcinfo;
+	srcfs->getinfo(srcinfo);
+	IFS::FileSystem::Info dstinfo;
+	dstfs.getinfo(dstinfo);
+
+	delete srcfs;
+
+	auto kb = [](volume_size_t size) { return (size + 1023) / 1024; };
+
+	Serial << "Source " << srcinfo.type << " size: " << kb(srcinfo.used()) << " KB; Output " << dstinfo.type
+		   << " used: " << kb(dstinfo.used()) << " KB, free: " << kb(dstinfo.freeSpace) << " KB" << endl;
+
+	Serial << "Perf stats: " << profiler << endl;
+
+	return res;
+}
+
 #ifdef ARCH_HOST
 void mountTestImage(const String& tag, const String& filename)
 {
@@ -82,7 +120,7 @@ void mountTestImage(const String& tag, const String& filename)
 		if(err == FS_OK) {
 			Serial.println(_F("FS info:"));
 			IFS::Debug::printFsInfo(Serial, *fs);
-			IFS::Debug::listDirectory(Serial, *fs, nullptr); //, IFS::Debug::Option::recurse);
+			IFS::Debug::listDirectory(Serial, *fs, nullptr, IFS::Debug::Option::recurse);
 
 			// listDirectoryAsync(fs, nullptr);
 			// return;
@@ -105,29 +143,35 @@ void createTestImage(const String& tag, const String& filename)
 {
 	auto& hfs = IFS::Host::getFileSystem();
 
-	auto f = hfs.open(filename, File::CreateNewAlways | File::ReadWrite);
-	if(f < 0) {
-		Serial << _F("Failed to open '") << filename << ": " << hfs.getErrorString(f) << endl;
-		return;
+	auto f = hfs.open(filename, File::ReadWrite);
+	bool create = (f < 0);
+	if(create) {
+		f = hfs.open(filename, File::CreateNewAlways | File::ReadWrite);
+		if(f < 0) {
+			Serial << _F("Failed to open '") << filename << ": " << hfs.getErrorString(f) << endl;
+			return;
+		}
+		hfs.ftruncate(f, 100 * 1024 * 1024);
 	}
-	hfs.ftruncate(f, 100 * 1024 * 1024);
 
 	Serial << _F("Mounted '") << filename << '\'' << endl;
 
 	auto dev = new Storage::FileDevice(tag, hfs, f);
 	Storage::registerDevice(dev);
 
-	auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
-
-	Storage::MKFS_PARM opt{
-		.types = Storage::DiskPart::SysType::fat16,
-		.clusterSize = 4096,
-	};
-	Storage::FatParam param;
-	bool ok = Storage::calculatePartition(opt, part, param);
-	Serial << "calculatePartition " << (ok ? "OK" : "FAIL") << endl;
-	ok = Storage::formatVolume(part, param);
-	Serial << "formatVolume " << (ok ? "OK" : "FAIL") << endl;
+	if(create) {
+		auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
+		Storage::MKFS_PARM opt{
+			.types = Storage::DiskPart::SysType::exfat,
+		};
+		Storage::FatParam param;
+		bool ok = Storage::calculatePartition(opt, part, param);
+		Serial << "calculatePartition " << (ok ? "OK" : "FAIL") << endl;
+		ok = Storage::formatVolume(part, param);
+		Serial << "formatVolume " << (ok ? "OK" : "FAIL") << endl;
+	} else {
+		Storage::scanDiskPartitions(*dev);
+	}
 
 	for(auto part : Storage::findPartition()) {
 		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
@@ -138,6 +182,11 @@ void createTestImage(const String& tag, const String& filename)
 		int err = fs->mount();
 		debug_i("mount: %s", fs->getErrorString(err).c_str());
 		if(err == FS_OK) {
+			if(create) {
+				auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fwfs);
+				fscopy(part, *fs);
+			}
+
 			Serial.println(_F("FS info:"));
 			IFS::Debug::printFsInfo(Serial, *fs);
 			IFS::Debug::listDirectory(Serial, *fs, nullptr); //, IFS::Debug::Option::recurse);
@@ -148,6 +197,8 @@ void createTestImage(const String& tag, const String& filename)
 			FileStream file(fs);
 			file.open(F("Sming/README.rst"));
 			Serial.copyFrom(&file);
+
+			fs->setContent("test.txt", F("This is a test file.\r\n"));
 		}
 		delete fs;
 
@@ -159,49 +210,6 @@ void createTestImage(const String& tag, const String& filename)
 	Storage::Debug::listPartitions(Serial);
 }
 #endif
-
-bool fscopy(const char* srcFile)
-{
-	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fwfs);
-	auto srcfs = IFS::createFirmwareFilesystem(part);
-	srcfs->mount();
-
-	auto dstfs = IFS::getDefaultFileSystem();
-
-	if(dstfs == nullptr) {
-		debug_e("File system not set");
-		return false;
-	}
-
-	IFS::Profiler profiler;
-	dstfs->setProfiler(&profiler);
-	IFS::FileCopier copier(*srcfs, *dstfs);
-
-	copier.onError(
-		[](IFS::FileSystem& fileSys, int errorCode, IFS::FileCopier::Operation operation, const String& path) -> bool {
-			Serial << operation << "('" << path << "'): " << fileSys.getErrorString(errorCode) << endl;
-			return true;
-		});
-
-	bool res = copier.copyDir(nullptr, nullptr);
-	dstfs->setProfiler(nullptr);
-
-	IFS::FileSystem::Info srcinfo;
-	srcfs->getinfo(srcinfo);
-	IFS::FileSystem::Info dstinfo;
-	dstfs->getinfo(dstinfo);
-
-	delete srcfs;
-
-	auto kb = [](volume_size_t size) { return (size + 1023) / 1024; };
-
-	Serial << "Source " << srcinfo.type << " size: " << kb(srcinfo.used()) << " KB; Output " << dstinfo.type
-		   << " used: " << kb(dstinfo.used()) << " KB, free: " << kb(dstinfo.freeSpace) << " KB" << endl;
-
-	Serial << "Perf stats: " << profiler << endl;
-
-	return res;
-}
 
 Storage::Partition sdinit()
 {
@@ -261,7 +269,8 @@ void fsinit()
 			return;
 		}
 
-		fscopy("fwfs1.bin");
+		auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fwfs);
+		fscopy(part, *getFileSystem());
 
 		int err = fileSetContent(newfile_txt, F("It works!\r\n"));
 		debug_i("fileSetContent(): %s", fileGetErrorString(err).c_str());

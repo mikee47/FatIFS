@@ -929,13 +929,14 @@ bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& par
 		param.sectorsPerCluster = std::min(param.sectorsPerCluster, uint16_t(128));
 		if(opt.types == DiskPart::SysType::fat32) {
 			param.sysType = DiskPart::SysType::fat32;
-		} else if(opt.types[DiskPart::SysType::fat16]) {
+		} else if(opt.types.none() || opt.types[DiskPart::SysType::fat16]) {
 			param.sysType = DiskPart::SysType::fat16;
 		} else {
 			return false;
 		}
 
-		if(calculateFatParam(param, volumeSectorCount, opt.types[DiskPart::SysType::fat32]) != IFS::FAT::FR_OK) {
+		if(calculateFatParam(param, volumeSectorCount, opt.types.none() || opt.types[DiskPart::SysType::fat32]) !=
+		   IFS::FAT::FR_OK) {
 			debug_e("[DISK] FAT parameter calculation failed");
 			return false;
 		}

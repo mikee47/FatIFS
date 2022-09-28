@@ -6,12 +6,11 @@ namespace Storage
 {
 /* Format parameter structure */
 struct MKFS_PARM {
-	DiskPart::SysTypes types; ///< Valid partition format types
-	bool createPartition;	 ///< true to create MBR/GPT, false to use whole disk
-	uint8_t numFats;		  ///< Number of FATs (1 or 2)
-	unsigned align;			  ///< Data area alignment (sector)
-	unsigned numRootEntries;  ///< Number of root directory entries
-	uint32_t clusterSize;	 ///< Cluster size (byte)
+	DiskPart::SysTypes types{0};  ///< Valid partition format types
+	uint8_t numFats{1};			  ///< Number of FATs (1 or 2)
+	unsigned align{0};			  ///< Data area alignment (sector)
+	unsigned numRootEntries{512}; ///< Number of root directory entries
+	uint32_t clusterSize{4096};   ///< Cluster size (byte)
 };
 
 struct FatParam {
