@@ -2,6 +2,7 @@
 #include "include/Storage/WorkBuffer.h"
 #include <Storage/CustomDevice.h>
 #include <IFS/TimeStamp.h>
+#include <IFS/Error.h>
 #include <debug_progmem.h>
 #include "diskdefs.h"
 
@@ -31,9 +32,10 @@ namespace Storage
 namespace
 {
 using namespace diskdefs;
+namespace Error = IFS::Error;
+using ErrorCode = IFS::ErrorCode;
 
 using LBA_t = IFS::FAT::LBA_t;
-using FRESULT = IFS::FAT::FRESULT;
 
 /* Find an FAT volume */
 /* (It supports only generic partitioning rules, MBR, GPT and SFD) */
@@ -44,9 +46,9 @@ using FRESULT = IFS::FAT::FRESULT;
 
 #if FF_LBA64
 /* Create partitions in GPT format */
-FRESULT create_partition_gpt(Device& device, unsigned sectorSizeShift,
-							 const LBA_t plst[], // Partition list
-							 WorkBuffer& workBuffer)
+ErrorCode create_partition_gpt(Device& device, unsigned sectorSizeShift,
+							   const LBA_t plst[], // Partition list
+							   WorkBuffer& workBuffer)
 {
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
 		return device.write(sector << sectorSizeShift, buff, count << sectorSizeShift);
@@ -109,11 +111,11 @@ FRESULT create_partition_gpt(Device& device, unsigned sectorSizeShift,
 			// Write to primary table
 			auto entryRelativeSector = partitionIndex / entriesPerSector;
 			if(!writeSectors(2 + entryRelativeSector, entries, 1)) {
-				return IFS::FAT::FR_DISK_ERR;
+				return Error::WriteFailure;
 			}
 			// Write to secondary table
 			if(!writeSectors(backupPartitionTableSector + entryRelativeSector, entries, 1)) {
-				return IFS::FAT::FR_DISK_ERR;
+				return Error::WriteFailure;
 			}
 		}
 	}
@@ -136,7 +138,7 @@ FRESULT create_partition_gpt(Device& device, unsigned sectorSizeShift,
 	os_get_random(&header.disk_guid, sizeof(efi_guid_t));
 	header.header_crc32 = crc32(&header, sizeof(header));
 	if(!writeSectors(header.my_lba, &header, 1)) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::WriteFailure;
 	}
 
 	/* Create secondary GPT header */
@@ -145,7 +147,7 @@ FRESULT create_partition_gpt(Device& device, unsigned sectorSizeShift,
 	header.header_crc32 = 0;
 	header.header_crc32 = crc32(&header, sizeof(header));
 	if(!writeSectors(header.my_lba, &header, 1)) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::WriteFailure;
 	}
 
 	/* Create protective MBR */
@@ -166,17 +168,17 @@ FRESULT create_partition_gpt(Device& device, unsigned sectorSizeShift,
 		.signature = MSDOS_MBR_SIGNATURE,
 	};
 	if(!writeSectors(0, &mbr, 1)) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::WriteFailure;
 	}
 
-	return IFS::FAT::FR_OK;
+	return Error::Success;
 }
 #endif // FF_LBA64
 
 /* Create partitions in MBR format */
-FRESULT create_partition_mbr(Device& device, unsigned sectorSizeShift,
-							 const LBA_t plst[], // Partition list
-							 DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
+ErrorCode create_partition_mbr(Device& device, unsigned sectorSizeShift,
+							   const LBA_t plst[], // Partition list
+							   DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
 {
 	uint32_t numDeviceSectors = device.getSectorCount();
 	// Determine drive CHS without any consideration of the drive geometry
@@ -242,24 +244,24 @@ FRESULT create_partition_mbr(Device& device, unsigned sectorSizeShift,
 	}
 
 	mbr.signature = MSDOS_MBR_SIGNATURE;
-	return device.write(0, &mbr, 1U << sectorSizeShift) ? IFS::FAT::FR_OK : IFS::FAT::FR_DISK_ERR;
+	return device.write(0, &mbr, 1U << sectorSizeShift) ? Error::Success : Error::WriteFailure;
 }
 
 /* Create partitions on the physical drive in format of MBR or GPT */
-FRESULT create_partition(Device& device,
-						 const LBA_t plst[], // Partition list
-						 DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
+ErrorCode create_partition(Device& device,
+						   const LBA_t plst[], // Partition list
+						   DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
 {
 	/* Get physical drive size */
 	LBA_t driveSectors = device.getSectorCount();
 	if(driveSectors == 0) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::ReadFailure;
 	}
 
 	auto sectorSize = device.getSectorSize();
 	uint8_t sectorSizeShift = getSizeBits(sectorSize);
 	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || sectorSize != (1U << sectorSizeShift)) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::BadParam;
 	}
 
 #if FF_LBA64
@@ -275,8 +277,8 @@ FRESULT create_partition(Device& device,
 /*
  * Create a compressed up-case table
  */
-FRESULT createUpcaseTable(Partition partition, LBA_t sect, unsigned sectorSizeShift, uint32_t& szb_case, uint32_t& sum,
-						  WorkBuffer& workBuffer)
+ErrorCode createUpcaseTable(Partition partition, LBA_t sect, unsigned sectorSizeShift, uint32_t& szb_case,
+							uint32_t& sum, WorkBuffer& workBuffer)
 {
 	szb_case = 0;
 	sum = 0; // Table checksum to be stored in the 82 entry
@@ -336,23 +338,23 @@ FRESULT createUpcaseTable(Partition partition, LBA_t sect, unsigned sectorSizeSh
 		if(si == 0 || sectorOffset == workBuffer.size()) {
 			auto byteCount = align_up(sectorOffset, 1U << sectorSizeShift);
 			if(!partition.write(sect << sectorSizeShift, workBuffer.get(), byteCount)) {
-				return IFS::FAT::FR_DISK_ERR;
+				return Error::WriteFailure;
 			}
 			sect += byteCount >> sectorSizeShift;
 			sectorOffset = 0;
 		}
 	} while(si != 0);
 
-	return IFS::FAT::FR_OK;
+	return Error::Success;
 }
 
-FRESULT createExFatVolume(Partition partition, const FatParam& param)
+ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 {
 	const auto sectorSizeShift = param.sectorSizeShift;
 	const auto volumeSectorCount = partition.size() >> sectorSizeShift;
 	if(volumeSectorCount < 0x1000) {
 		// Volume too small for exFAT
-		return IFS::FAT::FR_MKFS_ABORTED;
+		return Error::BadParam;
 	}
 	/* Determine FAT location, data location and number of clusters */
 	const auto sectorSize = 1U << sectorSizeShift;
@@ -373,12 +375,12 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 	const uint32_t dataStartSector = align_up(fatStartSector + numFatSectors, param.sectorsPerBlock);
 	if(dataStartSector >= volumeSectorCount / 2) {
 		// Volume too small
-		return IFS::FAT::FR_MKFS_ABORTED;
+		return Error::BadParam;
 	}
 	const uint32_t numClusters = (volumeSectorCount - dataStartSector) / sectorsPerCluster;
 	if(numClusters < 16 || numClusters > MAX_EXFAT) {
 		// Too few/many clusters
-		return IFS::FAT::FR_MKFS_ABORTED;
+		return Error::BadParam;
 	}
 
 	const uint32_t bitmapSize = (numClusters + 7) / 8; // Size of allocation bitmap
@@ -391,7 +393,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 	/* Get working buffer */
 	WorkBuffer workBuffer(1U << param.sectorSizeShift, 1);
 	if(!workBuffer) {
-		return IFS::FAT::FR_NOT_ENOUGH_CORE;
+		return Error::NoMem;
 	}
 
 #if FF_USE_TRIM
@@ -407,9 +409,9 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 	uint32_t szb_case;
 	uint32_t sum_case;
 	LBA_t sect = dataStartSector + sectorsPerCluster * clusterLengths[0]; // Table start sector
-	FRESULT fr = createUpcaseTable(partition, sect, sectorSizeShift, szb_case, sum_case, workBuffer);
-	if(fr) {
-		return fr;
+	auto err = createUpcaseTable(partition, sect, sectorSizeShift, szb_case, sum_case, workBuffer);
+	if(err) {
+		return err;
 	}
 
 	// Number of up-case table, root dir clusters
@@ -431,7 +433,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 		}
 		auto n = std::min(nsect, workBuffer.sectors());
 		if(!writeSectors(sect, workBuffer.get(), n)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		sect += n;
 		nsect -= n;
@@ -463,7 +465,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 		} while(nbit != 0 && clu < clusterCount);
 		auto n = std::min(nsect, workBuffer.sectors());
 		if(!writeSectors(sect, fat, n)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		sect += n;
 		nsect -= n;
@@ -491,7 +493,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 	do {					   /* Fill root directory sectors */
 		auto n = std::min(nsect, workBuffer.sectors());
 		if(!writeSectors(sect, dir, n)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		// Rest of entries are filled with zero
 		workBuffer.clear();
@@ -538,7 +540,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 			sum = xsum32(workBuffer[i], sum);
 		}
 		if(!writeSectors(sect++, &bpb, 1)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		/* Extended bootstrap record (+1..+8) */
 		workBuffer.clear();
@@ -547,7 +549,7 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 		for(; sectorIndex < 9; ++sectorIndex) {
 			sum = xsum32(&bpb, sectorSize, sum);
 			if(!writeSectors(sect++, &bpb, 1)) {
-				return IFS::FAT::FR_DISK_ERR;
+				return Error::WriteFailure;
 			}
 		}
 		/* OEM/Reserved record (+9..+10) */
@@ -555,23 +557,23 @@ FRESULT createExFatVolume(Partition partition, const FatParam& param)
 		for(; sectorIndex < 11; sectorIndex++) {
 			sum = xsum32(workBuffer.get(), sectorSize, sum);
 			if(!writeSectors(sect++, workBuffer.get(), 1)) {
-				return IFS::FAT::FR_DISK_ERR;
+				return Error::WriteFailure;
 			}
 		}
 		/* Fill sum record (+11) with checksum value */
 		auto sumRecord = workBuffer.as<uint32_t[]>();
 		std::fill_n(sumRecord, sectorSize / sizeof(sum), sum);
 		if(!writeSectors(sect++, sumRecord, 1)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 	}
 
-	return IFS::FAT::FR_OK;
+	return Error::Success;
 }
 
 #endif // ENABLE_EXFAT
 
-FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, const bool allowFat32)
+ErrorCode calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, const bool allowFat32)
 {
 	auto getAllocationUnitSize = [](const uint16_t cst[], uint32_t count) -> unsigned {
 		unsigned pau = 1;
@@ -606,7 +608,7 @@ FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, con
 			numReservedSectors = 32;
 			numRootDirSectors = 0; // No static directory
 			if(numClusters <= MAX_FAT16 || numClusters > MAX_FAT32) {
-				return IFS::FAT::FR_MKFS_ABORTED;
+				return Error::BadParam;
 			}
 		} else {
 			/* FAT volume */
@@ -651,7 +653,7 @@ FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, con
 		/* Determine number of clusters and final check of validity of the FAT sub-type */
 		if(volumeSectorCount < dataStartSector + pau * 16) {
 			// Volume too small
-			return IFS::FAT::FR_MKFS_ABORTED;
+			return Error::BadParam;
 		}
 
 		numClusters =
@@ -666,7 +668,7 @@ FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, con
 						continue;
 					}
 				}
-				return IFS::FAT::FR_MKFS_ABORTED;
+				return Error::BadParam;
 			}
 		}
 
@@ -690,7 +692,7 @@ FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, con
 						continue;
 					}
 				}
-				return IFS::FAT::FR_MKFS_ABORTED;
+				return Error::BadParam;
 			}
 
 			if(numClusters <= MAX_FAT12) {
@@ -702,13 +704,13 @@ FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, con
 						continue;
 					}
 				}
-				return IFS::FAT::FR_MKFS_ABORTED;
+				return Error::BadParam;
 			}
 		}
 
 		if(type == DiskPart::SysType::fat12 && numClusters > MAX_FAT12) {
 			// Too many clusters for FAT12
-			return IFS::FAT::FR_MKFS_ABORTED;
+			return Error::BadParam;
 		}
 
 		// Ok, cluster configuration is valid
@@ -724,10 +726,10 @@ FRESULT calculateFatParam(FatParam& param, const uint32_t volumeSectorCount, con
 	param.numRootDirSectors = numRootDirSectors;
 	param.fatStartSector = fatStartSector;
 
-	return IFS::FAT::FR_OK;
+	return Error::Success;
 }
 
-FRESULT createFatVolume(Partition partition, const FatParam& param)
+ErrorCode createFatVolume(Partition partition, const FatParam& param)
 {
 	const auto sectorSizeShift = param.sectorSizeShift;
 	const uint16_t sectorSize = 1U << sectorSizeShift;
@@ -735,7 +737,7 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 	/* Get working buffer */
 	WorkBuffer workBuffer(sectorSize, 1);
 	if(!workBuffer) {
-		return IFS::FAT::FR_NOT_ENOUGH_CORE;
+		return Error::NoMem;
 	}
 
 	const uint32_t volumeSectorCount = partition.size() >> sectorSizeShift;
@@ -790,14 +792,14 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 	}
 	bpb.signature = BOOT_SIGNATURE;
 	if(!writeSectors(0, &bpb, 1)) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::WriteFailure;
 	}
 
 	/* Create FSINFO record if needed */
 	if(param.sysType == DiskPart::SysType::fat32) {
 		/* Write backup VBR (VBR + 6) */
 		if(!writeSectors(6, &bpb, 1)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		workBuffer.clear();
 		auto& fsinfo = workBuffer.as<FAT::fat_boot_fsinfo_t>();
@@ -810,11 +812,11 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 		};
 		// Write backup FSINFO (VBR + 7)
 		if(!writeSectors(7, &fsinfo, 1)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		// Write original FSINFO (VBR + 1)
 		if(!writeSectors(1, &fsinfo, 1)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 	}
 
@@ -837,7 +839,7 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 			// Fill FAT sectors
 			auto n = std::min(nsect, workBuffer.sectors());
 			if(!writeSectors(sect, workBuffer.get(), n)) {
-				return IFS::FAT::FR_DISK_ERR;
+				return Error::WriteFailure;
 			}
 			// Rest of FAT is empty
 			workBuffer.clear();
@@ -851,18 +853,18 @@ FRESULT createFatVolume(Partition partition, const FatParam& param)
 		nsect != 0;) {
 		auto n = std::min(nsect, workBuffer.sectors());
 		if(!writeSectors(sect, workBuffer.get(), n)) {
-			return IFS::FAT::FR_DISK_ERR;
+			return Error::WriteFailure;
 		}
 		sect += n;
 		nsect -= n;
 	}
 
-	return IFS::FAT::FR_OK;
+	return Error::Success;
 }
 
 } // namespace
 
-bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param)
+ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param)
 {
 	param = FatParam{};
 
@@ -872,7 +874,7 @@ bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& par
 	sectorSize = partition.getSectorSize();
 	param.sectorSizeShift = getSizeBits(sectorSize);
 	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || sectorSize != (1U << param.sectorSizeShift)) {
-		return IFS::FAT::FR_DISK_ERR;
+		return Error::ReadFailure;
 	}
 #else
 	sectorSize = FF_MAX_SS;
@@ -911,7 +913,7 @@ bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& par
 	// Check for minimum volume size
 	if(volumeSectorCount < 128) {
 		debug_e("[DISK] Volume too small");
-		return false;
+		return Error::BadParam;
 	}
 
 	/* Determine the appropriate FAT type */
@@ -923,7 +925,7 @@ bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& par
 	} else {
 		if(FF_LBA64 && isSize64(volumeSectorCount)) {
 			debug_e("[DISK] FAT32 volumes limited to 4GB");
-			return false;
+			return Error::BadParam;
 		}
 		// Ensure AU is valid for FAT/FAT32
 		param.sectorsPerCluster = std::min(param.sectorsPerCluster, uint16_t(128));
@@ -932,13 +934,13 @@ bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& par
 		} else if(opt.types.none() || opt.types[DiskPart::SysType::fat16]) {
 			param.sysType = DiskPart::SysType::fat16;
 		} else {
-			return false;
+			return Error::BadParam;
 		}
 
-		if(calculateFatParam(param, volumeSectorCount, opt.types.none() || opt.types[DiskPart::SysType::fat32]) !=
-		   IFS::FAT::FR_OK) {
+		auto err = calculateFatParam(param, volumeSectorCount, opt.types.none() || opt.types[DiskPart::SysType::fat32]);
+		if(err) {
 			debug_e("[DISK] FAT parameter calculation failed");
-			return false;
+			return err;
 		}
 
 		/* Determine system ID in the MBR partition table */
@@ -965,23 +967,24 @@ bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& par
 	 */
 	param.volumeSerialNumber = uint32_t(volumeSectorCount) ^ IFS::fsGetTimeUTC() ^ system_get_time();
 
-	return true;
+	return Error::Success;
 }
 
-bool formatVolume(Partition partition, const FatParam& param)
+ErrorCode formatVolume(Partition partition, const FatParam& param)
 {
+	ErrorCode err;
 #ifdef ENABLE_EXFAT
 	if(param.sysType == DiskPart::SysType::exfat) {
 		/* Create an exFAT volume */
-		createExFatVolume(partition, param);
+		err = createExFatVolume(partition, param);
 
 	} else
 #endif
 	{
-		createFatVolume(partition, param);
+		err = createFatVolume(partition, param);
 	}
 
-	return partition.sync();
+	return err ?: partition.sync() ? Error::Success : Error::WriteFailure;
 }
 
 } // namespace Storage

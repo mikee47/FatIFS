@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DiskPart.h"
+#include <IFS/Error.h>
 
 namespace Storage
 {
@@ -33,20 +34,20 @@ struct FatParam {
 /**
  * @brief Add partition to a disk
  */
-bool createPartition(DiskPart partition);
+IFS::ErrorCode createPartition(DiskPart partition);
 
 /**
  * @brief Remove partition from a disk
  * @param partition Describes exactly which partition to remove
  */
-bool removePartition(DiskPart partition);
+IFS::ErrorCode removePartition(DiskPart partition);
 
 /**
  * @brief Deduce disk partition parameters for given space
  * @param partition On success, contains description of partition to be created
  */
-bool calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param);
+IFS::ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param);
 
-bool formatVolume(Partition partition, const FatParam& param);
+IFS::ErrorCode formatVolume(Partition partition, const FatParam& param);
 
 } // namespace Storage
