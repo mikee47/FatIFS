@@ -49,6 +49,18 @@ Configuration options
    Required if enabling :envvar:`ENABLE_STORAGE_SIZE64` option.
 
 
+.. envvar:: FAT_MAX_SECTOR_SIZE
+
+   default: 512
+
+   Determines the minimum supported read/write block size for storage devices.
+   SD cards can be configured so there should be no need to change this setting.
+
+   If using devices with large sector sizes then this value must be increased accordingly.
+   For example, AF disks use 4096-byte sectors so internal reads and writes must be a multiple of this value.
+   This will increase the internal buffer sizes and so consume more RAM.
+
+
 Acknowledgements
 ----------------
 
