@@ -59,6 +59,23 @@ public:
 	{
 	}
 
+	static SysType getSysTypeFromIndicator(SysIndicator si)
+	{
+		switch(si) {
+		case SI_EXFAT:
+			return SysType::exfat;
+		case SI_FAT32X:
+			return SysType::fat32;
+		case SI_FAT16:
+		case SI_FAT16B:
+			return SysType::fat16;
+		case SI_FAT12:
+			return SysType::fat12;
+		default:
+			return SysType::unknown;
+		}
+	}
+
 	size_t printTo(Print& p) const;
 };
 

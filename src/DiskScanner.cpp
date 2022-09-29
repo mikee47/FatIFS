@@ -210,6 +210,11 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 				part->size = entry.size_in_lba << sectorSizeShift;
 			}
 			part->sysind = DiskPart::SysIndicator(entry.os_type);
+			part->systype = DiskPart::getSysTypeFromIndicator(part->sysind);
+			if(DiskPart::fatTypes[part->systype]) {
+				part->type = Partition::Type::data;
+				part->subtype = uint8_t(Partition::SubType::Data::fat);
+			}
 			return std::unique_ptr<DiskPart::Info>(part);
 		}
 
