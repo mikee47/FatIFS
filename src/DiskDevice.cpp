@@ -23,9 +23,7 @@ namespace FAT
 // Minimum number of sectors to switch GPT as partitioning format
 #define FF_MIN_GPT 0x10000000
 
-#if FF_MIN_GPT > 0x100000000
-#error Wrong FF_MIN_GPT setting
-#endif
+static_assert(FF_MIN_GPT <= 0x100000000, "Wrong FF_MIN_GPT setting");
 
 namespace Storage
 {
@@ -59,9 +57,8 @@ ErrorCode create_partition_gpt(Device& device, unsigned sectorSizeShift,
 	auto partAlignSectors = GPT_ALIGN >> sectorSizeShift; // Partition alignment for GPT [sector]
 	auto numPartitionTableSectors =
 		GPT_ITEMS * sizeof(gpt_entry_t) >> sectorSizeShift; // Size of partition table [sector]
-	uint64_t backupPartitionTableSector =
-		driveSectors - numPartitionTableSectors - 1;					   // Backup partition table start sector
-	uint64_t nextAllocatableSector = 2 + numPartitionTableSectors;		   // First allocatable sector
+	uint64_t backupPartitionTableSector = driveSectors - numPartitionTableSectors - 1;
+	uint64_t nextAllocatableSector = 2 + numPartitionTableSectors;
 	uint64_t sz_pool = backupPartitionTableSector - nextAllocatableSector; // Size of allocatable area
 	uint32_t bcc = 0;													   // Cumulative partition entry checksum
 	uint64_t sz_part = 1;
@@ -258,10 +255,15 @@ ErrorCode create_partition(Device& device,
 		return Error::ReadFailure;
 	}
 
-	auto sectorSize = device.getSectorSize();
+	uint16_t sectorSize;
+#if FF_MAX_SS != FF_MIN_SS
+	sectorSize = device.getSectorSize();
 	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
 		return Error::BadParam;
 	}
+#else
+	sectorSize = FF_MAX_SS;
+#endif
 	uint8_t sectorSizeShift = getSizeBits(sectorSize);
 
 #if FF_LBA64
@@ -878,7 +880,7 @@ ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam
 #if FF_MAX_SS != FF_MIN_SS
 	sectorSize = partition.getSectorSize();
 	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
-		return Error::ReadFailure;
+		return Error::BadParam;
 	}
 #else
 	sectorSize = FF_MAX_SS;
