@@ -259,10 +259,10 @@ ErrorCode create_partition(Device& device,
 	}
 
 	auto sectorSize = device.getSectorSize();
-	uint8_t sectorSizeShift = getSizeBits(sectorSize);
-	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || sectorSize != (1U << sectorSizeShift)) {
+	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
 		return Error::BadParam;
 	}
+	uint8_t sectorSizeShift = getSizeBits(sectorSize);
 
 #if FF_LBA64
 	if(driveSectors >= FF_MIN_GPT) {
@@ -868,18 +868,22 @@ ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam
 {
 	param = FatParam{};
 
+	if(opt.types - DiskPart::fatTypes) {
+		debug_e("[DISK] calculatePartition invalid types");
+		return Error::BadParam;
+	}
+
 	/* Get physical drive status (sz_drv, sectorsPerBlock, sectorSize) */
 	uint16_t sectorSize;
 #if FF_MAX_SS != FF_MIN_SS
 	sectorSize = partition.getSectorSize();
-	param.sectorSizeShift = getSizeBits(sectorSize);
-	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || sectorSize != (1U << param.sectorSizeShift)) {
+	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
 		return Error::ReadFailure;
 	}
 #else
 	sectorSize = FF_MAX_SS;
-	param.sectorSizeShift = getSizeBits(sectorSize);
 #endif
+	param.sectorSizeShift = getSizeBits(sectorSize);
 
 	auto gptEntriesPerSector = sectorSize / sizeof(gpt_entry_t);
 
@@ -916,13 +920,16 @@ ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam
 		return Error::BadParam;
 	}
 
-	/* Determine the appropriate FAT type */
-	if(ENABLE_EXFAT && (opt.types == DiskPart::SysType::exfat || volumeSectorCount >= 64 * 1024 * 1024 ||
-						param.sectorsPerCluster > 128)) {
+/* Determine the appropriate FAT type */
+#ifdef ENABLE_EXFAT
+	if(opt.types == DiskPart::SysType::exfat || volumeSectorCount >= 64 * 1024 * 1024 ||
+	   param.sectorsPerCluster > 128) {
 		// exFAT only, vol >= 64MS or sectorsPerCluster > 128S
 		param.sysType = DiskPart::SysType::exfat;
 		param.sysIndicator = DiskPart::SI_EXFAT;
-	} else {
+	} else
+#endif
+	{
 		if(FF_LBA64 && isSize64(volumeSectorCount)) {
 			debug_e("[DISK] FAT32 volumes limited to 4GB");
 			return Error::BadParam;

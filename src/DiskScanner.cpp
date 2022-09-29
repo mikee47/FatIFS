@@ -135,16 +135,18 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 	if(state == State::idle) {
 #if FF_MAX_SS != FF_MIN_SS
 		sectorSize = device.getSectorSize();
-		sectorSizeShift = getSizeBits(sectorSize);
-		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || (sectorSize != 1 << sectorSizeShift)) {
+		if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
 			state = State::error;
 			return nullptr;
 		}
 #else
 		sectorSize = FF_MAX_SS;
-		sectorSizeShift = getSizeBits(FF_MAX_SS);
 #endif
+		sectorSizeShift = getSizeBits(sectorSize);
 		buffer = WorkBuffer(sectorSize, 1);
+		if(!buffer) {
+			return nullptr;
+		}
 
 		// Load sector 0 and check it
 		if(!READ_SECTORS(buffer.get(), 0, 1)) {

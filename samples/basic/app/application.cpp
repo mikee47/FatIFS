@@ -165,10 +165,13 @@ void createTestImage(const String& tag, const String& filename)
 			.types = Storage::DiskPart::SysType::exfat,
 		};
 		Storage::FatParam param;
-		bool ok = Storage::calculatePartition(opt, part, param);
-		Serial << "calculatePartition " << (ok ? "OK" : "FAIL") << endl;
-		ok = Storage::formatVolume(part, param);
-		Serial << "formatVolume " << (ok ? "OK" : "FAIL") << endl;
+		auto err = Storage::calculatePartition(opt, part, param);
+		Serial << "calculatePartition " << IFS::Error::toString(err) << endl;
+		if(!err) {
+			// Storage::createPartition()
+			err = Storage::formatVolume(part, param);
+			Serial << "formatVolume " << IFS::Error::toString(err) << endl;
+		}
 	} else {
 		Storage::scanDiskPartitions(*dev);
 	}
