@@ -20,14 +20,7 @@ namespace FAT
 } // namespace FAT
 } // namespace IFS
 
-// Minimum number of sectors to switch GPT as partitioning format
-#define FF_MIN_GPT 0x10000000
-
-static_assert(FF_MIN_GPT <= 0x100000000, "Wrong FF_MIN_GPT setting");
-
 namespace Storage
-{
-namespace
 {
 using namespace diskdefs;
 namespace Error = IFS::Error;
@@ -43,16 +36,36 @@ using LBA_t = IFS::FAT::LBA_t;
 /*-----------------------------------------------------------------------*/
 
 #if FF_LBA64
-/* Create partitions in GPT format */
-ErrorCode create_partition_gpt(Device& device, unsigned sectorSizeShift,
-							   const LBA_t plst[], // Partition list
-							   WorkBuffer& workBuffer)
+namespace GPT
 {
+/* Create partitions in GPT format */
+ErrorCode createPartition(Device& device, const PartitionSpec* spec, size_t numSpecs)
+{
+	if(spec == nullptr || numSpecs == 0) {
+		return Error::BadParam;
+	}
+
+	uint16_t sectorSize;
+#if FF_MAX_SS != FF_MIN_SS
+	sectorSize = device.getSectorSize();
+	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
+		return Error::BadParam;
+	}
+#else
+	sectorSize = FF_MAX_SS;
+#endif
+	uint8_t sectorSizeShift = getSizeBits(sectorSize);
+
+	/* Get working buffer */
+	WorkBuffer workBuffer(sectorSize, 1);
+	if(!workBuffer) {
+		return Error::NoMem;
+	}
+
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
 		return device.write(sector << sectorSizeShift, buff, count << sectorSizeShift);
 	};
 
-	auto sectorSize = 1U << sectorSizeShift;
 	auto driveSectors = device.getSectorCount();
 	auto partAlignSectors = GPT_ALIGN >> sectorSizeShift; // Partition alignment for GPT [sector]
 	auto numPartitionTableSectors =
@@ -63,7 +76,6 @@ ErrorCode create_partition_gpt(Device& device, unsigned sectorSizeShift,
 	uint32_t bcc = 0;													   // Cumulative partition entry checksum
 	uint64_t sz_part = 1;
 	unsigned partitionIndex = 0; // partition table index
-	unsigned si = 0;			 // size table index
 	auto entries = workBuffer.as<gpt_entry_t[]>();
 	auto entriesPerSector = sectorSize / sizeof(gpt_entry_t);
 	for(; partitionIndex < GPT_ITEMS; ++partitionIndex) {
@@ -72,33 +84,55 @@ ErrorCode create_partition_gpt(Device& device, unsigned sectorSizeShift,
 			workBuffer.clear();
 		}
 
+		if(partitionIndex >= numSpecs) {
+			partitionSpec = nullptr;
+		}
+
 		// Is the size table not terminated?
-		if(sz_part != 0) {
+		if(partitionSpec != nullptr) {
 			// Align partition start
 			nextAllocatableSector = align_up(nextAllocatableSector, partAlignSectors);
-			sz_part = plst[si++]; // Get a partition size
 			// Is the size in percentage?
-			if(sz_part <= 100) {
-				sz_part = sz_pool * sz_part / 100;
+			if(partitionSpec->size <= 100) {
+				sz_part = sz_pool * partitionSpec->size / 100;
 				// Align partition end
 				sz_part = align_up(sz_part, partAlignSectors);
+			} else {
+				sz_part = partitionSpec->size >> sectorSizeShift;
 			}
 			// Clip the size at end of the pool
 			if(nextAllocatableSector + sz_part > backupPartitionTableSector) {
-				sz_part = (nextAllocatableSector < backupPartitionTableSector)
-							  ? backupPartitionTableSector - nextAllocatableSector
-							  : 0;
+				if(nextAllocatableSector < backupPartitionTableSector) {
+					sz_part = backupPartitionTableSector - nextAllocatableSector;
+				} else {
+					// No room for any more partitions
+					// TODO: How to report this to the user? Return partition count?
+					sz_part = 0;
+					partitionSpec = nullptr;
+				}
 			}
 		}
 
 		// Add a partition?
-		if(sz_part != 0) {
+		if(partitionSpec != nullptr) {
 			auto& entry = entries[i];
 			entry.partition_type_guid = PARTITION_BASIC_DATA_GUID;
-			os_get_random(&entry.unique_partition_guid, sizeof(efi_guid_t));
+			if(partitionSpec->uuid) {
+				entry.unique_partition_guid = partitionSpec->uuid;
+			} else {
+				os_get_random(&entry.unique_partition_guid, sizeof(efi_guid_t));
+			}
 			entry.starting_lba = nextAllocatableSector;
 			entry.ending_lba = nextAllocatableSector + sz_part - 1;
-			nextAllocatableSector += sz_part; // Next allocatable sector
+			nextAllocatableSector += sz_part;
+
+			unsigned i{0};
+			auto namePtr = partitionSpec->name.c_str();
+			while(i < ARRAY_SIZE(entry.partition_name) && *namePtr != '\0') {
+				auto ch = tchar2uni(&namePtr);
+				auto wc = (dc < 0x10000) ? ff_uni2oem(ff_wtoupper(dc), CODEPAGE) : 0U;
+				entry.partition_name[i++] = wc;
+			}
 		}
 
 		// Write the buffer if it is filled up
@@ -170,13 +204,36 @@ ErrorCode create_partition_gpt(Device& device, unsigned sectorSizeShift,
 
 	return Error::Success;
 }
+
+} // namespace GPT
 #endif // FF_LBA64
 
-/* Create partitions in MBR format */
-ErrorCode create_partition_mbr(Device& device, unsigned sectorSizeShift,
-							   const LBA_t plst[], // Partition list
-							   DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
+namespace MBR
 {
+/* Create partitions in MBR format */
+ErrorCode createPartition(Device& device, PartitionSpec* partitionSpec, size_t partitionCount)
+{
+	if(partitionSpec == nullptr || partitionCount == 0 || partitionCount > 4) {
+		return Error::BadParam;
+	}
+
+	uint16_t sectorSize;
+#if FF_MAX_SS != FF_MIN_SS
+	sectorSize = device.getSectorSize();
+	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
+		return Error::BadParam;
+	}
+#else
+	sectorSize = FF_MAX_SS;
+#endif
+	uint8_t sectorSizeShift = getSizeBits(sectorSize);
+
+	/* Get working buffer */
+	WorkBuffer workBuffer(sectorSize, 1);
+	if(!workBuffer) {
+		return Error::NoMem;
+	}
+
 	uint32_t numDeviceSectors = device.getSectorCount();
 	// Determine drive CHS without any consideration of the drive geometry
 	constexpr uint8_t sectorsPerTrack = N_SEC_TRACK;
@@ -192,8 +249,8 @@ ErrorCode create_partition_mbr(Device& device, unsigned sectorSizeShift,
 	auto& mbr = workBuffer.as<legacy_mbr_t>();
 
 	uint32_t sect = sectorsPerTrack;
-	for(unsigned i = 0; i < 4 && sect != 0 && sect < numDeviceSectors; ++i) {
-		uint32_t numPartSectors = plst[i]; // Get partition size
+	for(unsigned i = 0; i < partitionCount && sect < numDeviceSectors; ++i) {
+		uint32_t numPartSectors = partitionSpec->size >> sectorSizeShift;
 		if(numPartSectors <= 100) {
 			// Size as percentage
 			numPartSectors = (numPartSectors == 100) ? numDeviceSectors : numPartSectors * (numDeviceSectors / 100);
@@ -229,7 +286,7 @@ ErrorCode create_partition_mbr(Device& device, unsigned sectorSizeShift,
 			.start_head = start.head,
 			.start_sector = start.sector,
 			.start_track = start.track,
-			.os_type = sys,
+			.os_type = partitionSpec->sysIndicator,
 			.end_head = end.head,
 			.end_sector = end.sector,
 			.end_track = end.track,
@@ -241,40 +298,13 @@ ErrorCode create_partition_mbr(Device& device, unsigned sectorSizeShift,
 	}
 
 	mbr.signature = MSDOS_MBR_SIGNATURE;
-	return device.write(0, &mbr, 1U << sectorSizeShift) ? Error::Success : Error::WriteFailure;
+	return device.write(0, &mbr, sectorSize) ? Error::Success : Error::WriteFailure;
 }
 
-/* Create partitions on the physical drive in format of MBR or GPT */
-ErrorCode create_partition(Device& device,
-						   const LBA_t plst[], // Partition list
-						   DiskPart::SysIndicator sys, WorkBuffer& workBuffer)
+} // namespace MBR
+
+namespace
 {
-	/* Get physical drive size */
-	LBA_t driveSectors = device.getSectorCount();
-	if(driveSectors == 0) {
-		return Error::ReadFailure;
-	}
-
-	uint16_t sectorSize;
-#if FF_MAX_SS != FF_MIN_SS
-	sectorSize = device.getSectorSize();
-	if(sectorSize > FF_MAX_SS || sectorSize < FF_MIN_SS || !isLog2(sectorSize)) {
-		return Error::BadParam;
-	}
-#else
-	sectorSize = FF_MAX_SS;
-#endif
-	uint8_t sectorSizeShift = getSizeBits(sectorSize);
-
-#if FF_LBA64
-	if(driveSectors >= FF_MIN_GPT) {
-		return create_partition_gpt(device, sectorSizeShift, plst, workBuffer);
-	}
-#endif
-
-	return create_partition_mbr(device, sectorSizeShift, plst, sys, workBuffer);
-}
-
 #ifdef ENABLE_EXFAT
 /*
  * Create a compressed up-case table
