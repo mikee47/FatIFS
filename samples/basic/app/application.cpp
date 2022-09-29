@@ -160,12 +160,29 @@ void createTestImage(const String& tag, const String& filename)
 	Storage::registerDevice(dev);
 
 	if(create) {
-		auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
+		Storage::MBR::PartitionSpec spec{
+			.size = 0x100000,
+			.name = "test partition",
+			.sysIndicator = Storage::DiskPart::SysIndicator::SI_FAT16,
+		};
+		auto err = Storage::MBR::createPartition(*dev, &spec, 1);
+		Serial << "MBR::createPartition " << IFS::Error::toString(err) << endl;
+
+		Storage::scanDiskPartitions(*dev);
+
+		// for(auto part : Storage::findPartition()) {
+		// 	Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
+		// }
+
+		auto part = *dev->partitions().begin();
+		// createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
+
+		// auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
 		Storage::MKFS_PARM opt{
-			.types = Storage::DiskPart::SysType::exfat,
+			// .types = Storage::DiskPart::SysType::exfat,
 		};
 		Storage::FatParam param;
-		auto err = Storage::calculatePartition(opt, part, param);
+		err = Storage::calculatePartition(opt, part, param);
 		Serial << "calculatePartition " << IFS::Error::toString(err) << endl;
 		if(!err) {
 			// Storage::createPartition()
