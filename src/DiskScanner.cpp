@@ -43,7 +43,7 @@ String unicode_to_oem(const uint16_t* str, size_t length)
 	return String(buf, outlen);
 }
 
-DiskPart::Info* identify(Device& device, const WorkBuffer& buffer, uint64_t offset)
+DiskPart::Info* identify(Device& device, const WorkBuffer& buffer, storage_size_t offset)
 {
 	auto& fat = buffer.as<const FAT::fat_boot_sector_t>();
 	auto& exfat = buffer.as<const EXFAT::boot_sector_t>();
@@ -93,12 +93,6 @@ DiskPart::Info* identify(Device& device, const WorkBuffer& buffer, uint64_t offs
 			debug_d("[DD] Found FAT @ 0x%luu", offset);
 			return part;
 		}
-	}
-
-	if(fat.signature == MSDOS_MBR_SIGNATURE) {
-		auto part = new DiskPart::Info(nullptr, Partition::Type::invalid, Partition::SubType::invalid, offset, 0, 0);
-		part->systype = DiskPart::SysType::unknown;
-		return part;
 	}
 
 	return nullptr;
@@ -155,16 +149,19 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 		}
 
 		auto part = identify(device, buffer, 0);
-		if(!part || part->systype != DiskPart::SysType::unknown) {
+		if(part) {
 			state = State::done;
 			return std::unique_ptr<DiskPart::Info>(part);
 		}
-		delete part;
 
 		/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
 
 		// GPT protective MBR?
 		auto& mbr = buffer.as<legacy_mbr_t>();
+
+		if(mbr.signature != MSDOS_MBR_SIGNATURE) {
+			return nullptr;
+		}
 
 		if(mbr.partition_record[0].os_type == EFI_PMBR_OSTYPE_EFI_GPT) {
 			// Load GPT header sector
@@ -205,7 +202,13 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 				partitionIndex = 0;
 				continue;
 			}
-			auto part = identify(device, buffer, entry.starting_lba << sectorSizeShift);
+			storage_size_t offset = entry.starting_lba << sectorSizeShift;
+			auto part = identify(device, buffer, offset);
+			if(part == nullptr) {
+				part = new DiskPart::Info{};
+				part->offset = offset;
+				part->size = entry.size_in_lba << sectorSizeShift;
+			}
 			part->sysind = DiskPart::SysIndicator(entry.os_type);
 			return std::unique_ptr<DiskPart::Info>(part);
 		}
@@ -230,7 +233,13 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 				continue;
 			}
 
-			auto part = identify(device, entryBuffer, entry.starting_lba << sectorSizeShift);
+			storage_size_t offset = entry.starting_lba << sectorSizeShift;
+			auto part = identify(device, entryBuffer, offset);
+			if(part == nullptr) {
+				part = new DiskPart::Info{};
+				part->offset = offset;
+				part->size = (1 + entry.ending_lba - entry.starting_lba) << sectorSizeShift;
+			}
 			part->guid = Uuid(entry.unique_partition_guid);
 			part->name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
 			return std::unique_ptr<DiskPart::Info>(part);
@@ -252,10 +261,7 @@ bool scanDiskPartitions(Device& device)
 	DiskScanner scanner(device);
 	std::unique_ptr<DiskPart::Info> part;
 	while((part = scanner.next())) {
-		if(part->systype <= DiskPart::SysType::unknown) {
-			continue;
-		}
-		if(part->name.length() == 0) {
+		if(part->name.length() == 0 && part->guid) {
 			part->name = part->guid;
 		}
 		dev.createPartition(part.release());

@@ -6,8 +6,6 @@ String toString(Storage::DiskPart::SysType type)
 	switch(type) {
 	case Type::unknown:
 		return F("unknown");
-	case Type::invalid:
-		return F("invalid");
 	case Type::fat12:
 		return F("fat12");
 	case Type::fat16:

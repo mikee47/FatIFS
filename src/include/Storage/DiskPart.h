@@ -10,8 +10,7 @@ class DiskPart : public Partition
 {
 public:
 	enum class SysType : uint8_t {
-		invalid, ///< MBR invalid
-		unknown, ///< MBR valid but partition type not recognised
+		unknown, ///< Partition type not recognised
 		fat12,
 		fat16,
 		fat32,
