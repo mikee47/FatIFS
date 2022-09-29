@@ -61,6 +61,14 @@ Configuration options
    This will increase the internal buffer sizes and so consume more RAM.
 
 
+.. envvar:: ENABLE_FAT_TRIM
+
+   default: disabled
+
+   When using devices with TRIM support this setting should be enabled.
+	See https://en.wikipedia.org/wiki/Trim_(computing).
+
+
 Acknowledgements
 ----------------
 

@@ -398,7 +398,7 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 
 #if FF_USE_TRIM
 	// Inform storage device that the volume area may be erased
-	partition.trim(0, volumeSectorCount);
+	partition.trim(0, partition.size());
 #endif
 
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
@@ -740,10 +740,9 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 		return Error::NoMem;
 	}
 
-	const uint32_t volumeSectorCount = partition.size() >> sectorSizeShift;
 #if FF_USE_TRIM
 	// Inform storage device that the volume area may be erased
-	partition.trim(0, volumeSectorCount);
+	partition.trim(0, partition.size());
 #endif
 
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
@@ -751,6 +750,7 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 	};
 
 	/* Create FAT VBR */
+	const uint32_t volumeSectorCount = partition.size() >> sectorSizeShift;
 	workBuffer.clear();
 	auto& bpb = workBuffer.as<FAT::fat_boot_sector_t>();
 	bpb = FAT::fat_boot_sector_t{

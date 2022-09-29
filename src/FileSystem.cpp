@@ -237,9 +237,7 @@ bool FileSystem::ioctl(uint8_t cmd, void* buff)
 		return partition.sync();
 	case CTRL_TRIM: {
 		auto rt = static_cast<LBA_t*>(buff);
-		auto start = rt[0];
-		auto end = rt[1];
-		return partition.trim(start, 1 + end - start);
+		return partition.trim(rt[0], rt[1]);
 	}
 	case GET_SECTOR_COUNT:
 		*reinterpret_cast<DWORD*>(buff) = partition.size() / SECTOR_SIZE;

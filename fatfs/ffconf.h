@@ -203,7 +203,11 @@
 /  To enable the 64-bit LBA, also exFAT needs to be enabled. (FF_FS_EXFAT == 1) */
 
 
-#define FF_USE_TRIM		1
+#ifdef ENABLE_FAT_TRIM
+#define FF_USE_TRIM     1
+#else
+#define FF_USE_TRIM     0
+#endif
 /* This option switches support for ATA-TRIM. (0:Disable or 1:Enable)
 /  To enable Trim function, also CTRL_TRIM command should be implemented to the
 /  disk_ioctl() function. */

@@ -1386,9 +1386,9 @@ static FRESULT remove_chain (	/* FR_OK(0):succeeded, !=0:error */
 			}
 #endif
 #if FF_USE_TRIM
-			rt[0] = clst2sect(fs, scl);					/* Start of data area to be freed */
-			rt[1] = clst2sect(fs, ecl) + fs->csize - 1;	/* End of data area to be freed */
-			disk_ioctl(fs->pdrv, CTRL_TRIM, rt);		/* Inform storage device that the data in the block may be erased */
+			rt[0] = SS(fs) * clst2sect(fs, scl);			/* Start of data area to be freed */
+			rt[1] = SS(fs) * clst2sect(fs, 1 + ecl - scl);	/* Size of data area to be freed */
+			disk_ioctl(fs->pdrv, CTRL_TRIM, rt);			/* Inform storage device that the data in the block may be erased */
 #endif
 			scl = ecl = nxt;
 		}
