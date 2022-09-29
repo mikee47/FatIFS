@@ -670,7 +670,7 @@ static int dbc_2nd (BYTE c)
 #if FF_USE_LFN
 
 /* Get a Unicode code point from the TCHAR string in defined API encodeing */
-static DWORD tchar2uni (	/* Returns a character in UTF-16 encoding (>=0x10000 on surrogate pair, 0xFFFFFFFF on decode error) */
+DWORD tchar2uni (	/* Returns a character in UTF-16 encoding (>=0x10000 on surrogate pair, 0xFFFFFFFF on decode error) */
 	const TCHAR** str		/* Pointer to pointer to TCHAR string in configured encoding */
 )
 {

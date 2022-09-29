@@ -69,6 +69,11 @@ Configuration options
 	See https://en.wikipedia.org/wiki/Trim_(computing).
 
 
+.. envvar:: FAT_CODEPAGE
+
+   default: 437 (US English)
+
+
 Acknowledgements
 ----------------
 

@@ -17,6 +17,9 @@ namespace IFS
 namespace FAT
 {
 #include "../fatfs/ff.h"
+
+extern uint32_t tchar2uni(const TCHAR** str);
+
 } // namespace FAT
 } // namespace IFS
 
@@ -39,9 +42,9 @@ using LBA_t = IFS::FAT::LBA_t;
 namespace GPT
 {
 /* Create partitions in GPT format */
-ErrorCode createPartition(Device& device, const PartitionSpec* spec, size_t numSpecs)
+ErrorCode createPartition(Device& device, const PartitionSpec* partitionSpec, size_t numSpecs)
 {
-	if(spec == nullptr || numSpecs == 0) {
+	if(partitionSpec == nullptr || numSpecs == 0) {
 		return Error::BadParam;
 	}
 
@@ -117,8 +120,8 @@ ErrorCode createPartition(Device& device, const PartitionSpec* spec, size_t numS
 		if(partitionSpec != nullptr) {
 			auto& entry = entries[i];
 			entry.partition_type_guid = PARTITION_BASIC_DATA_GUID;
-			if(partitionSpec->uuid) {
-				entry.unique_partition_guid = partitionSpec->uuid;
+			if(partitionSpec->guid) {
+				entry.unique_partition_guid = partitionSpec->guid;
 			} else {
 				os_get_random(&entry.unique_partition_guid, sizeof(efi_guid_t));
 			}
@@ -129,8 +132,8 @@ ErrorCode createPartition(Device& device, const PartitionSpec* spec, size_t numS
 			unsigned i{0};
 			auto namePtr = partitionSpec->name.c_str();
 			while(i < ARRAY_SIZE(entry.partition_name) && *namePtr != '\0') {
-				auto ch = tchar2uni(&namePtr);
-				auto wc = (dc < 0x10000) ? ff_uni2oem(ff_wtoupper(dc), CODEPAGE) : 0U;
+				auto dc = IFS::FAT::tchar2uni(&namePtr);
+				auto wc = (dc < 0x10000) ? IFS::FAT::ff_uni2oem(dc, FAT_CODEPAGE) : 0U;
 				entry.partition_name[i++] = wc;
 			}
 		}

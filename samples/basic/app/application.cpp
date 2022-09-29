@@ -160,6 +160,7 @@ void createTestImage(const String& tag, const String& filename)
 	Storage::registerDevice(dev);
 
 	if(create) {
+#if 0
 		Storage::MBR::PartitionSpec spec{
 			.size = 0x100000,
 			.name = "test partition",
@@ -167,6 +168,14 @@ void createTestImage(const String& tag, const String& filename)
 		};
 		auto err = Storage::MBR::createPartition(*dev, &spec, 1);
 		Serial << "MBR::createPartition " << IFS::Error::toString(err) << endl;
+#else
+		Storage::GPT::PartitionSpec spec{
+			.size = 0x100000,
+			.name = "test partition",
+		};
+		auto err = Storage::GPT::createPartition(*dev, &spec, 1);
+		Serial << "GPT::createPartition " << IFS::Error::toString(err) << endl;
+#endif
 
 		Storage::scanDiskPartitions(*dev);
 
