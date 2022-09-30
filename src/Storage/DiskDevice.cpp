@@ -79,6 +79,7 @@ ErrorCode createPartition(Device& device, const PartitionSpec* partitionSpec, si
 	uint32_t bcc = 0;													   // Cumulative partition entry checksum
 	uint64_t sz_part = 1;
 	unsigned partitionIndex = 0; // partition table index
+	unsigned partitionCount = 0; // Number of partitions created
 	auto entries = workBuffer.as<gpt_entry_t[]>();
 	auto entriesPerSector = sectorSize / sizeof(gpt_entry_t);
 	for(; partitionIndex < GPT_ITEMS; ++partitionIndex) {
@@ -97,7 +98,7 @@ ErrorCode createPartition(Device& device, const PartitionSpec* partitionSpec, si
 			nextAllocatableSector = align_up(nextAllocatableSector, partAlignSectors);
 			// Is the size in percentage?
 			if(partitionSpec->size <= 100) {
-				sz_part = sz_pool * partitionSpec->size / 100;
+				sz_part = sz_pool * partitionSpec->size / 100U;
 				// Align partition end
 				sz_part = align_up(sz_part, partAlignSectors);
 			} else {
@@ -120,8 +121,8 @@ ErrorCode createPartition(Device& device, const PartitionSpec* partitionSpec, si
 		if(partitionSpec != nullptr) {
 			auto& entry = entries[i];
 			entry.partition_type_guid = PARTITION_BASIC_DATA_GUID;
-			if(partitionSpec->guid) {
-				entry.unique_partition_guid = partitionSpec->guid;
+			if(partitionSpec->uniqueGuid) {
+				entry.unique_partition_guid = partitionSpec->uniqueGuid;
 			} else {
 				os_get_random(&entry.unique_partition_guid, sizeof(efi_guid_t));
 			}
@@ -136,6 +137,8 @@ ErrorCode createPartition(Device& device, const PartitionSpec* partitionSpec, si
 				auto wc = (dc < 0x10000) ? IFS::FAT::ff_uni2oem(dc, FAT_CODEPAGE) : 0U;
 				entry.partition_name[i++] = wc;
 			}
+
+			++partitionCount;
 		}
 
 		// Write the buffer if it is filled up
@@ -205,7 +208,7 @@ ErrorCode createPartition(Device& device, const PartitionSpec* partitionSpec, si
 		return Error::WriteFailure;
 	}
 
-	return Error::Success;
+	return partitionCount;
 }
 
 } // namespace GPT
@@ -251,12 +254,15 @@ ErrorCode createPartition(Device& device, PartitionSpec* partitionSpec, size_t p
 	workBuffer.clear();
 	auto& mbr = workBuffer.as<legacy_mbr_t>();
 
+	unsigned partIndex;
 	uint32_t sect = sectorsPerTrack;
-	for(unsigned i = 0; i < partitionCount && sect < numDeviceSectors; ++i) {
-		uint32_t numPartSectors = partitionSpec->size >> sectorSizeShift;
-		if(numPartSectors <= 100) {
+	for(partIndex = 0; partIndex < partitionCount && sect < numDeviceSectors; ++partIndex) {
+		uint32_t numPartSectors;
+		if(partitionSpec->size <= 100) {
 			// Size as percentage
-			numPartSectors = (numPartSectors == 100) ? numDeviceSectors : numPartSectors * (numDeviceSectors / 100);
+			numPartSectors = uint64_t(partitionSpec->size) * (numDeviceSectors - sectorsPerTrack) / 100U;
+		} else {
+			numPartSectors = partitionSpec->size >> sectorSizeShift;
 		}
 		if(sect + numPartSectors > numDeviceSectors || sect + numPartSectors < sect) {
 			// Clip at drive size
@@ -285,7 +291,7 @@ ErrorCode createPartition(Device& device, PartitionSpec* partitionSpec, size_t p
 		auto start = calc_CHS(sect);
 		auto end = calc_CHS(sect + numPartSectors - 1);
 
-		mbr.partition_record[i] = gpt_mbr_record_t{
+		mbr.partition_record[partIndex] = gpt_mbr_record_t{
 			.start_head = start.head,
 			.start_sector = start.sector,
 			.start_track = start.track,
@@ -301,7 +307,7 @@ ErrorCode createPartition(Device& device, PartitionSpec* partitionSpec, size_t p
 	}
 
 	mbr.signature = MSDOS_MBR_SIGNATURE;
-	return device.write(0, &mbr, sectorSize) ? Error::Success : Error::WriteFailure;
+	return device.write(0, &mbr, sectorSize) ? partIndex : Error::WriteFailure;
 }
 
 } // namespace MBR

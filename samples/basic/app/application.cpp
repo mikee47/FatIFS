@@ -163,31 +163,26 @@ void createTestImage(const String& tag, const String& filename)
 	if(create) {
 #if 0
 		Storage::MBR::PartitionSpec spec{
-			.size = 0x100000,
-			.name = "test partition",
+			{
+				.size = 100,
+				.name = "test partition",
+			},
 			.sysIndicator = Storage::DiskPart::SysIndicator::SI_FAT16,
 		};
 		auto err = Storage::MBR::createPartition(*dev, &spec, 1);
-		Serial << "MBR::createPartition " << IFS::Error::toString(err) << endl;
 #else
-		Storage::GPT::PartitionSpec spec{
-			.size = 0x100000,
+		Storage::GPT::PartitionSpec spec{{
+			.size = 100,
 			.name = "test partition",
-		};
+		}};
 		auto err = Storage::GPT::createPartition(*dev, &spec, 1);
-		Serial << "GPT::createPartition " << IFS::Error::toString(err) << endl;
 #endif
+		Serial << "createPartition " << IFS::Error::toString(err) << endl;
 
 		Storage::scanDiskPartitions(*dev);
 
-		// for(auto part : Storage::findPartition()) {
-		// 	Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
-		// }
-
 		auto part = *dev->partitions().begin();
-		// createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
 
-		// auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
 		IFS::FAT::MKFS_PARM opt{
 			// .types = Storage::DiskPart::SysType::exfat,
 		};
@@ -283,7 +278,6 @@ void fsinit()
 	} else if(err == IFS::Error::BadFileSystem) {
 		debug_i("Formatting disk");
 		err = fs->format();
-		// auto fr = f_mkfs(*part.getDevice(), Storage::MKFS_PARM{});
 
 		debug_i("format: %s", fs->getErrorString(err).c_str());
 		if(!fileMountFileSystem(fs)) {
