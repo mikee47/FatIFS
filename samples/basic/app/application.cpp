@@ -69,7 +69,9 @@ bool fscopy(Storage::Partition fwfsPart, IFS::FileSystem& dstfs)
 	IFS::FileCopier copier(*srcfs, dstfs);
 
 	copier.onError([](const auto& info) -> bool {
-		Serial << info << endl;
+		if(info.operation != IFS::FileCopier::Operation::setattr) {
+			Serial << info << endl;
+		}
 		return true;
 	});
 
