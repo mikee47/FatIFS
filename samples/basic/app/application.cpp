@@ -198,10 +198,9 @@ void createTestImage(const String& tag, const String& filename)
 			err = Storage::formatVolume(part, param);
 			Serial << "formatVolume " << IFS::Error::toString(err) << endl;
 		}
-	} else {
-		Storage::scanDiskPartitions(*dev);
 	}
 
+	Storage::scanDiskPartitions(*dev);
 	for(auto part : Storage::findPartition()) {
 		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
 	}

@@ -262,6 +262,7 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 bool scanDiskPartitions(Device& device)
 {
 	auto& dev = static_cast<CustomDevice&>(device);
+	dev.clearPartitionTable();
 
 	DiskScanner scanner(device);
 	std::unique_ptr<DiskPart::Info> part;
