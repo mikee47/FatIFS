@@ -20,6 +20,7 @@
 #include "include/IFS/FAT/FileSystem.h"
 #include "include/IFS/FAT/Error.h"
 #include "include/IFS/FAT/FatTime.h"
+#include "include/IFS/FAT/Format.h"
 #include <IFS/Util.h>
 #include <SystemClock.h>
 
@@ -354,39 +355,35 @@ int FileSystem::tryMount()
  */
 int FileSystem::format()
 {
-	auto wasMounted = mounted;
+	// Use existing FAT variant if available, otherwise any type will do
+	auto getSysType = [](uint8_t fs_type) -> DiskPart::SysTypes {
+		using SysType = Storage::DiskPart::SysType;
+		switch(fs_type) {
+		case FS_FAT12:
+			return SysType::fat12;
+		case FS_FAT16:
+			return SysType::fat16;
+		case FS_FAT32:
+			return SysType::fat32;
+		case FS_EXFAT:
+			return SysType::exfat;
+		default:
+			return 0; // Use any FAT type
+		}
+	};
+	auto sysType = getSysType(fatfs->fs_type);
+
+	*fatfs = S_FATFS{};
 	mounted = false;
 
-	// BYTE work_area[FF_MAX_SS];
-	// MKFS_PARM opt{FM_SFD};
-	// using SubType = Storage::Partition::SubType::Data;
-	// switch(SubType(partition.subType())) {
-	// case SubType::fat:
-	// 	opt.fmt |= FM_FAT;
-	// 	break;
-	// case SubType::fat32:
-	// 	opt.fmt |= FM_FAT32;
-	// 	break;
-	// case SubType::exfat:
-	// 	opt.fmt |= FM_EXFAT;
-	// 	break;
-	// default:
-	// 	return Error::BadPartition;
-	// }
-	currentVolume = this;
-
-	// TODO
-	// auto fr = f_mkfs("", &opt, work_area, sizeof(work_area));
-	auto fr = FR_MKFS_ABORTED;
-
-	if(fr != FR_OK) {
-		auto err = sysError(fr);
+	int err = formatVolume(partition, {sysType});
+	if(err) {
 		debug_ifserr(err, "format()");
 		return err;
 	}
 
 	// Re-mount
-	return wasMounted ? tryMount() : true;
+	return sysType ? tryMount() : FS_OK;
 }
 
 int FileSystem::check()

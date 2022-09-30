@@ -67,8 +67,7 @@ IFS::ErrorCode formatVolume(Storage::Partition partition, const FatParam& param)
 inline IFS::ErrorCode formatVolume(Storage::Partition partition, const MKFS_PARM& opt = {})
 {
 	FatParam param;
-	auto err = calculatePartition(partition, opt, param);
-	return err ?: formatVolume(partition, param);
+	return calculatePartition(partition, opt, param) ?: formatVolume(partition, param);
 }
 
 } // namespace FAT

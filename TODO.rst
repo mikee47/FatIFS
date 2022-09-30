@@ -45,9 +45,6 @@ Size limitations
 Sample application
     Move host code into test application
 
-Formatting
-    FileSystem::format() should re-format volume using existing settings.
-
 DiskPart
     Could this code be integrated into standard Storage?
 
@@ -78,4 +75,7 @@ Decide how important os_type / sys_ind field is and how it gets set
 trim
     Best to keep this distinct from `erase_range` as it performs a subtly different function.
     Parameters are in sectors (DSS) but should probably change this to byte offsets for clarity.
+
+Formatting
+    FileSystem::format() should re-format volume using existing settings.
 
