@@ -1,5 +1,5 @@
 /****
- * FatIFS.cpp
+ * FAT.h
  *
  * Copyright 2022 mikee47 <mike@sillyhouse.net>
  *
@@ -17,29 +17,29 @@
  *
  ****/
 
-#include "include/IFS/FatFS.h"
-#include "include/IFS/FatFS/FileSystem.h"
-#include <FileSystem.h>
-#include <Storage.h>
+#pragma once
+
+#include <IFS/FileSystem.h>
 
 namespace IFS
 {
-FileSystem* createFatFilesystem(Storage::Partition partition)
-{
-	auto fs = new FAT::FileSystem(partition);
-	return FileSystem::cast(fs);
-}
+/**
+ * @brief Create a FAT filesystem
+ * @param partition
+ * @retval FileSystem* constructed filesystem object
+ */
+FileSystem* createFatFilesystem(Storage::Partition partition);
 
 } // namespace IFS
 
-bool fatfs_mount()
-{
-	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
-	return part ? fatfs_mount(part) : false;
-}
+/**
+ * @brief Mount the first available FAT volume
+ * @retval bool true on success
+ */
+bool fatfs_mount();
 
-bool fatfs_mount(Storage::Partition partition)
-{
-	auto fs = IFS::createFatFilesystem(partition);
-	return fileMountFileSystem(fs);
-}
+/**
+ * @brief Mount FAT volume from a specific partition
+ * @retval bool true on success
+ */
+bool fatfs_mount(Storage::Partition partition);

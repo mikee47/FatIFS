@@ -17,9 +17,9 @@
  *
  ****/
 
-#include "include/IFS/FatFS/FileSystem.h"
-#include "include/IFS/FatFS/Error.h"
-#include "include/IFS/FatFS/FatTime.h"
+#include "include/IFS/FAT/FileSystem.h"
+#include "include/IFS/FAT/Error.h"
+#include "include/IFS/FAT/FatTime.h"
 #include <IFS/Util.h>
 #include <SystemClock.h>
 

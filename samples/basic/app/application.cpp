@@ -1,5 +1,5 @@
 #include <SmingCore.h>
-#include <IFS/FatFS.h>
+#include <IFS/FAT.h>
 #include <IFS/FileCopier.h>
 #include <IFS/Debug.h>
 #include <IFS/FileSystem.h>
@@ -9,6 +9,7 @@
 #include <Storage/Debug.h>
 #include <Storage/Sdio.h>
 #include <IFS/Enumerator.h>
+#include <IFS/FAT/Format.h>
 
 // Chip selects independent of SPI controller in use
 #ifdef ARCH_ESP32
@@ -187,10 +188,10 @@ void createTestImage(const String& tag, const String& filename)
 		// createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
 
 		// auto part = dev->createPartition(tag, Storage::Partition::SubType::Data::fat, 0, dev->getSize());
-		Storage::MKFS_PARM opt{
+		IFS::FAT::MKFS_PARM opt{
 			// .types = Storage::DiskPart::SysType::exfat,
 		};
-		err = Storage::formatVolume(part, opt);
+		err = IFS::FAT::formatVolume(part, opt);
 		Serial << "formatVolume " << IFS::Error::toString(err) << endl;
 	}
 
