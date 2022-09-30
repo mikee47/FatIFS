@@ -12,6 +12,13 @@ DiskPart perhaps extraneous
 		SysIndicator sysind{}; ///< Partition sys value
 
 Sector size
+    If sector size is fixed at 512 bytes then device sector size isn't queried.
+    Otherwise, fatfs uses sector size reported by device.
+    This might not be correct.
+    How, therefore, to implement device-specific sector sizes?
+    Perhaps devices only report sector size if explicitly required, otherwise
+    it defaults to 512. e.g. ss = std::max(dev.ss, 512)
+
     Need to be very clear about difference between Device sector size (DSS),
     and filing system sector size (FSS).
 
@@ -44,9 +51,6 @@ Size limitations
 
 Sample application
     Move host code into test application
-
-DiskPart
-    Could this code be integrated into standard Storage?
 
 Documentation
     Brief overview of disk partitioning and layout
