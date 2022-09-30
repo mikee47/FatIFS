@@ -467,7 +467,7 @@ bool Card::sync()
 	return res;
 }
 
-bool Card::read_cid(cid_t& cid)
+bool Card::read_cid(CardID& cid)
 {
 	if(!initialised) {
 		return false;

@@ -3,7 +3,9 @@ COMPONENT_DEPENDS := \
 	SPI
 
 COMPONENT_SRCDIRS := \
-	src
+	src \
+	src/Storage \
+	src/Storage/Sdio
 
 COMPONENT_INCDIRS := \
 	src \

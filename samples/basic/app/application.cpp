@@ -249,16 +249,14 @@ Storage::Partition sdinit()
 		return Storage::Partition{};
 	}
 
-	Storage::SDIO::cid_t cid;
+	Storage::SDIO::CardID cid;
 	if(card->read_cid(cid)) {
 		m_printHex("CID", &cid, sizeof(cid));
-		Serial << "Card Identification Information" << endl;
-		Serial << "  MID: 0x" << String(cid.mid, HEX) << endl;
-		Serial << "  OID: " << String(cid.oid, 2) << endl;
-		Serial << "  PNM: " << String(cid.pnm, 5) << endl;
-		Serial << "  PRV: " << cid.major() << '.' << cid.minor() << endl;
-		Serial << "  PSN: " << String(cid.psn, HEX, 8) << endl;
-		Serial << "  MDT: " << cid.mdt_month() << '/' << cid.mdt_year() << endl;
+		Serial << "Card Identification Information" << endl << cid;
+	}
+
+	for(auto part : card->partitions()) {
+		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
 	}
 
 	return *card->partitions().find(Storage::Partition::SubType::Data::fat);

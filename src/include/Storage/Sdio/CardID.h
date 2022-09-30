@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <Print.h>
 
 namespace Storage
 {
@@ -17,7 +17,7 @@ namespace SDIO
 	1a 01               MDT    0000 0001 0001 1010
 	b9                  CRC7: 0x5C
 */
-struct __attribute__((packed)) cid_t {
+struct __attribute__((packed)) CardID {
 	uint8_t mid;		  ///< Manufacturer ID
 	char oid[2];		  ///< OEM / Application ID
 	char pnm[5];		  ///< Product name
@@ -52,8 +52,10 @@ struct __attribute__((packed)) cid_t {
 	{
 		return prv & 0x0f;
 	}
+
+	size_t printTo(Print& p) const;
 };
-static_assert(sizeof(cid_t) == 16, "Bad CID struct");
+static_assert(sizeof(CardID) == 16, "Bad CID struct");
 
 } // namespace SDIO
 } // namespace Storage
