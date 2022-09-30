@@ -36,7 +36,8 @@ public:
 	};
 
 	struct Info : public Partition::Info {
-		Uuid guid;
+		Uuid typeGuid;
+		Uuid uniqueGuid;
 		uint32_t clusterSize{}; ///< Cluster size (bytes)
 		uint16_t sectorSize{};  ///< Sector size (bytes)
 		SysType systype{};
@@ -51,6 +52,8 @@ public:
 		{
 			return fatTypes[systype];
 		}
+
+		String getTypeName() const;
 	};
 
 	using Partition::Partition;

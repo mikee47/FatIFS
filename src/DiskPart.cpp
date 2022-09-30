@@ -1,4 +1,6 @@
 #include "include/Storage/DiskPart.h"
+#include <FlashString/Array.hpp>
+#include "../linux/efi.h"
 
 String toString(Storage::DiskPart::SysType type)
 {
@@ -21,6 +23,28 @@ String toString(Storage::DiskPart::SysType type)
 
 namespace Storage
 {
+String DiskPart::Info::getTypeName() const
+{
+	struct Entry {
+		const efi_guid_t* guid;
+		const FlashString* name;
+	};
+#define XX(name, ...) DEFINE_FSTR_LOCAL(FS_##name, #name)
+	EFI_PARTITION_TYPE_GUID_MAP(XX)
+#undef XX
+#define XX(name, ...) {&name##_GUID, &FS_##name},
+	DEFINE_FSTR_ARRAY_LOCAL(list, Entry, EFI_PARTITION_TYPE_GUID_MAP(XX))
+#undef XX
+
+	for(auto e : list) {
+		if(*e.guid == typeGuid) {
+			return *e.name;
+		}
+	}
+
+	return nullptr;
+}
+
 template <typename T, typename... Args> size_t tprintln(Print& p, String tag, const T& value, Args... args)
 {
 	size_t n{0};
@@ -45,8 +69,13 @@ size_t DiskPart::printTo(Print& p) const
 #define TPRINTLN(tag, value, ...) n += tprintln(p, F(tag), value, ##__VA_ARGS__)
 
 	TPRINTLN("Sys Type", info.systype);
-	if(info.guid) {
-		TPRINTLN("GUID", info.guid);
+	if(info.typeGuid || info.uniqueGuid) {
+		String typeName = info.getTypeName();
+		if(typeName) {
+			TPRINTLN("EFI Type", typeName);
+		}
+		TPRINTLN("EFI Type GUID", info.typeGuid);
+		TPRINTLN("EFI Unique GUID", info.uniqueGuid);
 	}
 	if(info.sysind) {
 		TPRINTLN("Sys Indicator", String(info.sysind, HEX, 2));

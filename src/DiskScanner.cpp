@@ -230,7 +230,7 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 			auto entries = buffer.as<gpt_entry_t[]>();
 			auto& entry = entries[partitionIndex % entriesPerSector];
 			++partitionIndex;
-			if(entry.partition_type_guid != PARTITION_BASIC_DATA_GUID) {
+			if(!entry.partition_type_guid) {
 				continue;
 			}
 
@@ -245,7 +245,8 @@ std::unique_ptr<DiskPart::Info> DiskScanner::next()
 				part->offset = offset;
 				part->size = (1 + entry.ending_lba - entry.starting_lba) << sectorSizeShift;
 			}
-			part->guid = Uuid(entry.unique_partition_guid);
+			part->typeGuid = entry.partition_type_guid;
+			part->uniqueGuid = entry.unique_partition_guid;
 			part->name = unicode_to_oem(entry.partition_name, ARRAY_SIZE(entry.partition_name));
 			return std::unique_ptr<DiskPart::Info>(part);
 		}
@@ -267,8 +268,8 @@ bool scanDiskPartitions(Device& device)
 	DiskScanner scanner(device);
 	std::unique_ptr<DiskPart::Info> part;
 	while((part = scanner.next())) {
-		if(part->name.length() == 0 && part->guid) {
-			part->name = part->guid;
+		if(part->name.length() == 0 && part->uniqueGuid) {
+			part->name = part->uniqueGuid;
 		}
 		dev.createPartition(part.release());
 	}

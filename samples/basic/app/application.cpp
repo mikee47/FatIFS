@@ -201,6 +201,7 @@ void createTestImage(const String& tag, const String& filename)
 	}
 
 	Storage::scanDiskPartitions(*dev);
+
 	for(auto part : Storage::findPartition()) {
 		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
 	}
