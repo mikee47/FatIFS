@@ -899,7 +899,7 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 
 } // namespace
 
-ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param)
+ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam& param)
 {
 	param = FatParam{};
 

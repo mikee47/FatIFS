@@ -190,14 +190,8 @@ void createTestImage(const String& tag, const String& filename)
 		Storage::MKFS_PARM opt{
 			// .types = Storage::DiskPart::SysType::exfat,
 		};
-		Storage::FatParam param;
-		err = Storage::calculatePartition(opt, part, param);
-		Serial << "calculatePartition " << IFS::Error::toString(err) << endl;
-		if(!err) {
-			// Storage::createPartition()
-			err = Storage::formatVolume(part, param);
-			Serial << "formatVolume " << IFS::Error::toString(err) << endl;
-		}
+		err = Storage::formatVolume(part, opt);
+		Serial << "formatVolume " << IFS::Error::toString(err) << endl;
 	}
 
 	Storage::scanDiskPartitions(*dev);

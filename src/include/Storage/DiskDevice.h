@@ -93,22 +93,39 @@ Add 'force' flag to override default (safer) behaviour
  */
 
 /**
- * @brief Add partition to a disk
- */
-// IFS::ErrorCode createPartition(DiskPart partition);
-
-/**
- * @brief Remove partition from a disk
- * @param partition Describes exactly which partition to remove
- */
-// IFS::ErrorCode removePartition(DiskPart partition);
-
-/**
  * @brief Deduce disk partition parameters for given space
- * @param partition On success, contains description of partition to be created
+ * @param partition The partition to format
+ * @param opt Formatting options
+ * @param param On success, contains calculated parameters for FAT volume
+ * @retval IFS::ErrorCode
+ *
+ * When partitioning using MBR format, this method can be used to determine the `Sys indicator` value setting.
  */
-IFS::ErrorCode calculatePartition(const MKFS_PARM& opt, Partition partition, FatParam& param);
+IFS::ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam& param);
 
+/**
+ * @brief Format disk partition using pre-calculated FAT parameters
+ * @param partition The partition to format
+ * @param param Detailed FAT parameters (returned from `calculatePartition`)
+ * @retval IFS::ErrorCode
+ *
+ * This function allows fine control over exactly how a FAT partition is constructed.
+ * Generally the `calculatePartition` function should be used to populate the `param` structure,
+ * then any modifications can be made as required before actually formatting the volume.
+ */
 IFS::ErrorCode formatVolume(Partition partition, const FatParam& param);
+
+/**
+ * @brief Format disk partition
+ * @param partition The partition to format
+ * @param opt Formatting options
+ * @retval IFS::ErrorCode
+ */
+inline IFS::ErrorCode formatVolume(Partition partition, const MKFS_PARM& opt = {})
+{
+	FatParam param;
+	auto err = calculatePartition(partition, opt, param);
+	return err ?: formatVolume(partition, param);
+}
 
 } // namespace Storage
