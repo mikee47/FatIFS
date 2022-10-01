@@ -356,8 +356,7 @@ int FileSystem::tryMount()
 int FileSystem::format()
 {
 	// Use existing FAT variant if available, otherwise any type will do
-	auto getSysType = [](uint8_t fs_type) -> DiskPart::SysTypes {
-		using SysType = Storage::DiskPart::SysType;
+	auto getSysType = [](uint8_t fs_type) -> SysTypes {
 		switch(fs_type) {
 		case FS_FAT12:
 			return SysType::fat12;

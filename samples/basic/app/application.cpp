@@ -4,8 +4,9 @@
 #include <IFS/Debug.h>
 #include <IFS/FileSystem.h>
 #include <Storage/FileDevice.h>
-#include <Storage/DiskDevice.h>
-#include <Storage/DiskScanner.h>
+#include <Storage/Disk/MBR.h>
+#include <Storage/Disk/GPT.h>
+#include <Storage/Disk/Scanner.h>
 #include <Storage/Debug.h>
 #include <Storage/Sdio.h>
 #include <IFS/Enumerator.h>
@@ -110,11 +111,9 @@ void mountTestImage(const String& tag, const String& filename)
 	auto dev = new Storage::FileDevice(tag, hfs, f);
 	Storage::registerDevice(dev);
 
-	Storage::scanDiskPartitions(*dev);
+	Storage::Disk::scanPartitions(*dev);
 
-	for(auto part : Storage::findPartition()) {
-		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
-	}
+	Storage::Debug::listPartitions(Serial);
 
 	for(auto part : dev->partitions()) {
 		auto fs = IFS::createFatFilesystem(part);
@@ -159,44 +158,41 @@ void createTestImage(const String& tag, const String& filename)
 
 	Serial << _F("Mounted '") << filename << '\'' << endl;
 
-	auto dev = new Storage::FileDevice(tag, hfs, f);
-	Storage::registerDevice(dev);
+	using namespace Storage;
+
+	auto dev = new FileDevice(tag, hfs, f);
+	registerDevice(dev);
 
 	if(create) {
 #if 0
-		Storage::MBR::PartitionSpec spec{
-			{
-				.size = 100,
-				.name = "test partition",
-			},
-			.sysIndicator = Storage::DiskPart::SysIndicator::SI_FAT16,
+		Disk::MBR::PartitionSpec spec{
+			.size = 100,
+			.sysIndicator = Disk::SysIndicator::SI_FAT16,
 		};
-		auto err = Storage::MBR::createPartition(*dev, &spec, 1);
+		auto err = Disk::MBR::createPartition(*dev, &spec, 1);
 #else
-		Storage::GPT::PartitionSpec spec{{
+		Disk::GPT::PartitionSpec spec{
 			.size = 100,
 			.name = "test partition",
-		}};
-		auto err = Storage::GPT::createPartition(*dev, &spec, 1);
+		};
+		auto err = Disk::GPT::createPartition(*dev, &spec, 1);
 #endif
-		Serial << "createPartition " << IFS::Error::toString(err) << endl;
+		Serial << "createPartition " << Disk::Error::toString(err) << endl;
 
-		Storage::scanDiskPartitions(*dev);
+		Storage::Disk::scanPartitions(*dev);
 
 		auto part = *dev->partitions().begin();
 
 		IFS::FAT::MKFS_PARM opt{
-			// .types = Storage::DiskPart::SysType::exfat,
+			.types = Storage::Disk::SysType::exfat,
 		};
 		err = IFS::FAT::formatVolume(part, opt);
-		Serial << "formatVolume " << IFS::Error::toString(err) << endl;
+		Serial << "formatVolume " << Disk::Error::toString(err) << endl;
 	}
 
-	Storage::scanDiskPartitions(*dev);
+	Disk::scanPartitions(*dev);
 
-	for(auto part : Storage::findPartition()) {
-		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
-	}
+	Debug::listPartitions(Serial);
 
 	for(auto part : dev->partitions()) {
 		auto fs = IFS::createFatFilesystem(part);
@@ -247,9 +243,7 @@ Storage::Partition sdinit()
 		Serial << "Card Identification Information" << endl << cid;
 	}
 
-	for(auto part : card->partitions()) {
-		Serial << _F("Disk Partition:") << endl << Storage::DiskPart(part) << endl;
-	}
+	Storage::Debug::listPartitions(Serial, *card);
 
 	return *card->partitions().find(Storage::Partition::SubType::Data::fat);
 }
