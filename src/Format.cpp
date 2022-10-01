@@ -1,5 +1,5 @@
 #include "include/IFS/FAT/Format.h"
-#include <Storage/Disk/WorkBuffer.h>
+#include <Storage/Disk/SectorBuffer.h>
 #include <IFS/TimeStamp.h>
 #include <Storage/Disk/diskdefs.h>
 
@@ -39,7 +39,7 @@ uint32_t xsum32(const void* buffer, size_t length, uint32_t sum)
  * Create a compressed up-case table
  */
 ErrorCode createUpcaseTable(Partition partition, storage_size_t sect, unsigned sectorSizeShift, uint32_t& szb_case,
-							uint32_t& sum, WorkBuffer& workBuffer)
+							uint32_t& sum, SectorBuffer& buffer)
 {
 	szb_case = 0;
 	sum = 0; // Table checksum to be stored in the 82 entry
@@ -89,16 +89,16 @@ ErrorCode createUpcaseTable(Partition partition, storage_size_t sect, unsigned s
 		}
 
 		/* Put it into the write buffer */
-		workBuffer[sectorOffset++] = ch;
+		buffer[sectorOffset++] = ch;
 		sum = xsum32(ch, sum);
-		workBuffer[sectorOffset++] = ch >> 8;
+		buffer[sectorOffset++] = ch >> 8;
 		sum = xsum32(ch >> 8, sum);
 		szb_case += 2;
 
 		// Write buffered data when buffer full or end of process
-		if(si == 0 || sectorOffset == workBuffer.size()) {
+		if(si == 0 || sectorOffset == buffer.size()) {
 			auto byteCount = align_up(sectorOffset, 1U << sectorSizeShift);
-			if(!partition.write(sect << sectorSizeShift, workBuffer.get(), byteCount)) {
+			if(!partition.write(sect << sectorSizeShift, buffer.get(), byteCount)) {
 				return Error::WriteFailure;
 			}
 			sect += byteCount >> sectorSizeShift;
@@ -154,8 +154,8 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	};
 
 	/* Get working buffer */
-	WorkBuffer workBuffer(1U << param.sectorSizeShift, 1);
-	if(!workBuffer) {
+	SectorBuffer buffer(1U << param.sectorSizeShift, 1);
+	if(!buffer) {
 		return Error::NoMem;
 	}
 
@@ -172,7 +172,7 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	uint32_t szb_case;
 	uint32_t sum_case;
 	LBA_t sect = dataStartSector + sectorsPerCluster * clusterLengths[0]; // Table start sector
-	auto err = createUpcaseTable(partition, sect, sectorSizeShift, szb_case, sum_case, workBuffer);
+	auto err = createUpcaseTable(partition, sect, sectorSizeShift, szb_case, sum_case, buffer);
 	if(err) {
 		return err;
 	}
@@ -187,15 +187,15 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	auto nbit = clusterLengths[0] + clusterLengths[1] +
 				clusterLengths[2]; // Number of clusters in-use by system (bitmap, up-case and root-dir)
 	do {
-		workBuffer.clear();
+		buffer.clear();
 
 		// Mark used clusters
-		auto maxBits = 8 * workBuffer.size();
+		auto maxBits = 8 * buffer.size();
 		for(unsigned i = 0; i < maxBits && nbit != 0; ++i, --nbit) {
-			workBuffer[i / 8] |= 1 << (i % 8);
+			buffer[i / 8] |= 1 << (i % 8);
 		}
-		auto n = std::min(nsect, workBuffer.sectors());
-		if(!writeSectors(sect, workBuffer.get(), n)) {
+		auto n = std::min(nsect, buffer.sectors());
+		if(!writeSectors(sect, buffer.get(), n)) {
 			return Error::WriteFailure;
 		}
 		sect += n;
@@ -209,9 +209,9 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	nbit = 0;
 	uint32_t clu = 0;
 	do {
-		workBuffer.clear();
-		auto fat = workBuffer.as<uint32_t[]>();
-		auto clusterCount = workBuffer.size() / sizeof(uint32_t);
+		buffer.clear();
+		auto fat = buffer.as<uint32_t[]>();
+		auto clusterCount = buffer.size() / sizeof(uint32_t);
 		if(clu == 0) {
 			fat[0] = 0xFFFFFFF8;
 			fat[1] = 0xFFFFFFFF;
@@ -226,7 +226,7 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 				nbit = clusterLengths[chainIndex++]; // Next chain length
 			}
 		} while(nbit != 0 && clu < clusterCount);
-		auto n = std::min(nsect, workBuffer.sectors());
+		auto n = std::min(nsect, buffer.sectors());
 		if(!writeSectors(sect, fat, n)) {
 			return Error::WriteFailure;
 		}
@@ -235,8 +235,8 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	} while(nsect != 0);
 
 	/* Initialize the root directory */
-	workBuffer.clear();
-	auto dir = workBuffer.as<EXFAT::exfat_dentry_t[]>();
+	buffer.clear();
+	auto dir = buffer.as<EXFAT::exfat_dentry_t[]>();
 	dir[0] = EXFAT::exfat_dentry_t{EXFAT_VOLUME, .volume_label = {
 													 7,
 													 {'N', 'O', ' ', 'N', 'A', 'M', 'E'},
@@ -254,12 +254,12 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	sect = dataStartSector + sectorsPerCluster * (clusterLengths[0] + clusterLengths[1]);
 	nsect = sectorsPerCluster; /* Start of the root directory and number of sectors */
 	do {					   /* Fill root directory sectors */
-		auto n = std::min(nsect, workBuffer.sectors());
+		auto n = std::min(nsect, buffer.sectors());
 		if(!writeSectors(sect, dir, n)) {
 			return Error::WriteFailure;
 		}
 		// Rest of entries are filled with zero
-		workBuffer.clear();
+		buffer.clear();
 		sect += n;
 		nsect -= n;
 	} while(nsect != 0);
@@ -268,8 +268,8 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	sect = 0;
 	for(unsigned n = 0; n < 2; ++n) {
 		/* Main record (+0) */
-		workBuffer.clear();
-		auto& bpb = workBuffer.as<EXFAT::boot_sector_t>();
+		buffer.clear();
+		auto& bpb = buffer.as<EXFAT::boot_sector_t>();
 		bpb = EXFAT::boot_sector_t{
 			.jmp_boot = {0xEB, 0x76, 0x90},
 			.fs_type = FSTYPE_EXFAT,
@@ -300,13 +300,13 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 			if(i == offsetof(EXFAT::boot_sector_t, percent_in_use)) {
 				continue;
 			}
-			sum = xsum32(workBuffer[i], sum);
+			sum = xsum32(buffer[i], sum);
 		}
 		if(!writeSectors(sect++, &bpb, 1)) {
 			return Error::WriteFailure;
 		}
 		/* Extended bootstrap record (+1..+8) */
-		workBuffer.clear();
+		buffer.clear();
 		bpb.signature = BOOT_SIGNATURE;
 		unsigned sectorIndex = 1;
 		for(; sectorIndex < 9; ++sectorIndex) {
@@ -316,15 +316,15 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 			}
 		}
 		/* OEM/Reserved record (+9..+10) */
-		workBuffer.clear();
+		buffer.clear();
 		for(; sectorIndex < 11; sectorIndex++) {
-			sum = xsum32(workBuffer.get(), sectorSize, sum);
-			if(!writeSectors(sect++, workBuffer.get(), 1)) {
+			sum = xsum32(buffer.get(), sectorSize, sum);
+			if(!writeSectors(sect++, buffer.get(), 1)) {
 				return Error::WriteFailure;
 			}
 		}
 		/* Fill sum record (+11) with checksum value */
-		auto sumRecord = workBuffer.as<uint32_t[]>();
+		auto sumRecord = buffer.as<uint32_t[]>();
 		std::fill_n(sumRecord, sectorSize / sizeof(sum), sum);
 		if(!writeSectors(sect++, sumRecord, 1)) {
 			return Error::WriteFailure;
@@ -503,8 +503,8 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 	const uint16_t sectorSize = 1U << sectorSizeShift;
 
 	/* Get working buffer */
-	WorkBuffer workBuffer(sectorSize, 1);
-	if(!workBuffer) {
+	SectorBuffer buffer(sectorSize, 1);
+	if(!buffer) {
 		return Error::NoMem;
 	}
 
@@ -519,8 +519,8 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 
 	/* Create FAT VBR */
 	const uint32_t volumeSectorCount = partition.size() >> sectorSizeShift;
-	workBuffer.clear();
-	auto& bpb = workBuffer.as<fat_boot_sector_t>();
+	buffer.clear();
+	auto& bpb = buffer.as<fat_boot_sector_t>();
 	bpb = fat_boot_sector_t{
 		.jmp_boot = {0xEB, 0xFE, 0x90},
 		.system_id = {'M', 'S', 'D', 'O', 'S', '5', '.', '0'},
@@ -569,8 +569,8 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 		if(!writeSectors(6, &bpb, 1)) {
 			return Error::WriteFailure;
 		}
-		workBuffer.clear();
-		auto& fsinfo = workBuffer.as<fat_boot_fsinfo_t>();
+		buffer.clear();
+		auto& fsinfo = buffer.as<fat_boot_fsinfo_t>();
 		fsinfo = fat_boot_fsinfo_t{
 			.signature1 = FAT_FSINFO_SIG1,
 			.signature2 = FAT_FSINFO_SIG2,
@@ -589,28 +589,28 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 	}
 
 	/* Initialize FAT area */
-	workBuffer.clear();
+	buffer.clear();
 	auto sect = param.fatStartSector;
 	for(unsigned i = 0; i < param.numFats; ++i) {
 		// Initialize each FAT
 		if(param.sysType == SysType::fat32) {
-			auto fat = workBuffer.as<uint32_t[]>();
+			auto fat = buffer.as<uint32_t[]>();
 			fat[0] = 0xFFFFFFF8;
 			fat[1] = 0xFFFFFFFF;
 			fat[2] = 0x0FFFFFFF; // root directory
 		} else {
-			auto fat = workBuffer.as<uint16_t[]>();
+			auto fat = buffer.as<uint16_t[]>();
 			fat[0] = 0xFFF8;
 			fat[1] = (param.sysType == SysType::fat12) ? 0x00FF : 0xFFFF;
 		}
 		for(auto nsect = param.numFatSectors; nsect != 0;) {
 			// Fill FAT sectors
-			auto n = std::min(nsect, workBuffer.sectors());
-			if(!writeSectors(sect, workBuffer.get(), n)) {
+			auto n = std::min(nsect, buffer.sectors());
+			if(!writeSectors(sect, buffer.get(), n)) {
 				return Error::WriteFailure;
 			}
 			// Rest of FAT is empty
-			workBuffer.clear();
+			buffer.clear();
 			sect += n;
 			nsect -= n;
 		}
@@ -619,8 +619,8 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 	/* Initialize root directory (fill with zero) */
 	for(auto nsect = (param.sysType == SysType::fat32) ? param.sectorsPerCluster : param.numRootDirSectors;
 		nsect != 0;) {
-		auto n = std::min(nsect, workBuffer.sectors());
-		if(!writeSectors(sect, workBuffer.get(), n)) {
+		auto n = std::min(nsect, buffer.sectors());
+		if(!writeSectors(sect, buffer.get(), n)) {
 			return Error::WriteFailure;
 		}
 		sect += n;
