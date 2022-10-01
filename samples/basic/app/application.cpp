@@ -8,7 +8,7 @@
 #include <Storage/Disk/GPT.h>
 #include <Storage/Disk/Scanner.h>
 #include <Storage/Debug.h>
-#include <Storage/Sdio.h>
+#include <Storage/SD/Card.h>
 #include <IFS/Enumerator.h>
 #include <IFS/FAT/Format.h>
 
@@ -230,14 +230,14 @@ void createTestImage(const String& tag, const String& filename)
 
 Storage::Partition sdinit()
 {
-	auto card = new Storage::SDIO::Card(SPI);
+	auto card = new Storage::SD::Card(SPI);
 	Storage::registerDevice(card);
 
 	if(!card->begin(PIN_CARD_CS, SPI_FREQ_LIMIT)) {
 		return Storage::Partition{};
 	}
 
-	Storage::SDIO::CardID cid;
+	Storage::SD::Card::ID cid;
 	if(card->read_cid(cid)) {
 		m_printHex("CID", &cid, sizeof(cid));
 		Serial << "Card Identification Information" << endl << cid;
