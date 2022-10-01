@@ -288,7 +288,7 @@ OpenFlags mapFileOpenFlags(OpenFlags flags, BYTE& mode)
 }
 
 #define CHECK_MOUNTED()                                                                                                \
-	if(!mounted) {                                                                                                     \
+	if(!fatfs) {                                                                                                       \
 		return Error::NotMounted;                                                                                      \
 	}
 
@@ -304,7 +304,6 @@ OpenFlags mapFileOpenFlags(OpenFlags flags, BYTE& mode)
 
 FileSystem::FileSystem(Storage::Partition partition) : partition(partition)
 {
-	fatfs.reset(new S_FATFS{});
 }
 
 FileSystem::~FileSystem()
@@ -332,12 +331,18 @@ int FileSystem::mount()
 
 int FileSystem::tryMount()
 {
-	assert(!mounted);
+	assert(!fatfs);
+
+	fatfs.reset(new S_FATFS{});
+	if(!fatfs) {
+		return Error::NoMem;
+	}
 
 	currentVolume = this;
 	FATFS* rfs;
 	auto res = mount_volume(nullptr, &rfs, 1);
 	if(res != FR_OK) {
+		fatfs.reset();
 		int err = sysError(res);
 		debug_ifserr(err, "mount_volume()");
 		return err;
@@ -346,7 +351,6 @@ int FileSystem::tryMount()
 	// get_attr("", AttributeTag::ReadAce, rootAcl.readAccess);
 	// get_attr("", AttributeTag::WriteAce, rootAcl.writeAccess);
 
-	mounted = true;
 	return FS_OK;
 }
 
@@ -370,10 +374,9 @@ int FileSystem::format()
 			return 0; // Use any FAT type
 		}
 	};
-	auto sysType = getSysType(fatfs->fs_type);
+	SysTypes sysType = fatfs ? getSysType(fatfs->fs_type) : 0;
 
-	*fatfs = S_FATFS{};
-	mounted = false;
+	fatfs.reset();
 
 	int err = formatVolume(partition, {sysType});
 	if(err) {
@@ -394,6 +397,13 @@ int FileSystem::getinfo(Info& info)
 {
 	info.clear();
 	info.partition = partition;
+	info.attr = Attribute::NoMeta;
+	info.maxNameLength = FF_MAX_LFN;
+	info.maxPathLength = UINT16_MAX;
+	if(!fatfs) {
+		return FS_OK;
+	}
+
 	switch(fatfs->fs_type) {
 	case FS_FAT12:
 	case FS_FAT16:
@@ -408,26 +418,22 @@ int FileSystem::getinfo(Info& info)
 	default:
 		info.type = Type::Unknown;
 	}
-	info.attr = Attribute::NoMeta;
-	info.maxNameLength = FF_MAX_LFN;
-	info.maxPathLength = UINT16_MAX;
-	if(mounted) {
-		info.attr |= Attribute::Mounted;
-		info.volumeSize = partition.size();
-		currentVolume = this;
-		DWORD nclst;
-		FATFS* fs;
-		FRESULT fr = f_getfree("", &nclst, &fs);
-		if(fr == FR_OK) {
-			info.freeSpace = nclst * fs->csize * SECTOR_SIZE;
-		}
-		char label[32];
-		DWORD vsn;
-		fr = f_getlabel("", label, &vsn);
-		if(fr == FR_OK) {
-			info.name.copy(label);
-			info.volumeID = vsn;
-		}
+
+	info.attr |= Attribute::Mounted;
+	info.volumeSize = partition.size();
+	currentVolume = this;
+	DWORD nclst;
+	FATFS* fs;
+	FRESULT fr = f_getfree("", &nclst, &fs);
+	if(fr == FR_OK) {
+		info.freeSpace = nclst * fs->csize * SECTOR_SIZE;
+	}
+	char label[32];
+	DWORD vsn;
+	fr = f_getlabel("", label, &vsn);
+	if(fr == FR_OK) {
+		info.name.copy(label);
+		info.volumeID = vsn;
 	}
 
 	return FS_OK;

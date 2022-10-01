@@ -101,7 +101,6 @@ private:
 	std::unique_ptr<S_FATFS> fatfs;
 	std::unique_ptr<FileDescriptor> fileDescriptors[FATFS_MAX_FDS];
 	ACL rootAcl{};
-	bool mounted{false};
 };
 
 } // namespace FAT
