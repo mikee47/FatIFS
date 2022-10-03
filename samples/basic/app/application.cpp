@@ -237,11 +237,11 @@ Storage::Partition sdinit()
 		return Storage::Partition{};
 	}
 
-	Storage::SD::Card::ID cid;
-	if(card->read_cid(cid)) {
-		m_printHex("CID", &cid, sizeof(cid));
-		Serial << "Card Identification Information" << endl << cid;
-	}
+	Serial << "CSD" << endl << card->csd << endl;
+
+	auto& cid = card->cid;
+	m_printHex("CID", &cid, sizeof(cid));
+	Serial << "Card Identification Information" << endl << cid;
 
 	Storage::Debug::listPartitions(Serial, *card);
 
