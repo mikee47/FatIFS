@@ -36,9 +36,6 @@ namespace FAT
 // Maximum file handle value
 #define FATFS_HANDLE_MAX (FATFS_HANDLE_MIN + FATFS_MAX_FDS - 1)
 
-#define FATFS_MAX_VOLUMES 4 // FF_VOLUMES
-#define FATFS_SECTOR_SIZE 512
-
 struct S_FATFS;
 struct S_FILINFO;
 struct FileDescriptor;
@@ -101,6 +98,7 @@ private:
 	std::unique_ptr<S_FATFS> fatfs;
 	std::unique_ptr<FileDescriptor> fileDescriptors[FATFS_MAX_FDS];
 	ACL rootAcl{};
+	uint8_t sectorSizeShift{0};
 };
 
 } // namespace FAT

@@ -24,8 +24,6 @@
 #include <IFS/Util.h>
 #include <SystemClock.h>
 
-#define SECTOR_SIZE FATFS_SECTOR_SIZE
-
 namespace
 {
 IFS::FAT::FileSystem* currentVolume;
@@ -165,8 +163,8 @@ IFS::FileAttributes getAttr(BYTE attr)
 
 bool FileSystem::read_sector(void* buff, uint32_t sector, size_t count)
 {
-	auto offset = uint64_t(sector) * SECTOR_SIZE;
-	auto size = count * SECTOR_SIZE;
+	auto offset = storage_size_t(sector) << sectorSizeShift;
+	auto size = count << sectorSizeShift;
 	if(!partition.read(offset, buff, size)) {
 		return false;
 	}
@@ -178,57 +176,13 @@ bool FileSystem::read_sector(void* buff, uint32_t sector, size_t count)
 
 bool FileSystem::write_sector(const void* buff, uint32_t sector, size_t count)
 {
-	auto offset = uint64_t(sector) * SECTOR_SIZE;
-	auto size = count * SECTOR_SIZE;
+	auto offset = uint64_t(sector) << sectorSizeShift;
+	auto size = count << sectorSizeShift;
 	if(profiler != nullptr) {
 		profiler->write(offset, buff, size);
 	}
 
-	auto isSectorEmpty = [&]() -> bool {
-		uint32_t buffer[SECTOR_SIZE / 4];
-		partition.read(offset, buffer, sizeof(buffer));
-		for(unsigned i = 0; i < ARRAY_SIZE(buffer); ++i) {
-			if(buffer[i] != 0xffffffffUL) {
-				return false;
-			}
-		}
-		return true;
-	};
-
-	auto blockSize = partition.getBlockSize();
-	if(blockSize <= SECTOR_SIZE || isSectorEmpty()) {
-		return partition.write(offset, buff, size);
-	}
-
-	auto blockOffset = (offset / partition.getBlockSize()) * blockSize;
-	auto sectorsPerBlock = blockSize / SECTOR_SIZE;
-	struct SectorBuffer {
-		uint8_t data[SECTOR_SIZE];
-	};
-	std::unique_ptr<SectorBuffer[]> sectorBuffer;
-	sectorBuffer.reset(new SectorBuffer[sectorsPerBlock - 1]);
-	for(unsigned i = 0, j = 0; i < sectorsPerBlock; ++i) {
-		if(i == sector % sectorsPerBlock) {
-			continue;
-		}
-		if(!partition.read(blockOffset + i * SECTOR_SIZE, sectorBuffer[j++].data, SECTOR_SIZE)) {
-			return false;
-		}
-	}
-
-	if(!partition.erase_range(blockOffset, blockSize)) {
-		return false;
-	}
-
-	bool res = true;
-	for(unsigned i = 0, j = 0; res && i < sectorsPerBlock; ++i) {
-		if(i == sector % sectorsPerBlock) {
-			res = partition.write(offset, buff, size);
-		} else {
-			res = partition.write(blockOffset + i * SECTOR_SIZE, sectorBuffer[j++].data, SECTOR_SIZE);
-		}
-	}
-	return res;
+	return partition.write(offset, buff, size);
 }
 
 bool FileSystem::ioctl(uint8_t cmd, void* buff)
@@ -241,13 +195,13 @@ bool FileSystem::ioctl(uint8_t cmd, void* buff)
 		return partition.trim(rt[0], rt[1]);
 	}
 	case GET_SECTOR_COUNT:
-		*reinterpret_cast<DWORD*>(buff) = partition.size() / SECTOR_SIZE;
+		*reinterpret_cast<DWORD*>(buff) = partition.size() >> sectorSizeShift;
 		return true;
 	case GET_SECTOR_SIZE:
-		*reinterpret_cast<WORD*>(buff) = SECTOR_SIZE;
+		*reinterpret_cast<WORD*>(buff) = 1U << sectorSizeShift;
 		return true;
 	case GET_BLOCK_SIZE:
-		*reinterpret_cast<DWORD*>(buff) = partition.getBlockSize() / SECTOR_SIZE;
+		*reinterpret_cast<DWORD*>(buff) = partition.getBlockSize() >> sectorSizeShift;
 		return true;
 	default:
 		return false;
@@ -316,9 +270,11 @@ int FileSystem::mount()
 		return Error::NoPartition;
 	}
 
-	if(partition.type() != Storage::Partition::Type::data) {
+	if(partition.fullType() != Storage::Partition::SubType::Data::fat) {
 		return Error::BadPartition;
 	}
+
+	sectorSizeShift = Storage::getSizeBits(partition.getSectorSize());
 
 	auto res = tryMount();
 	if(res < 0) {
@@ -426,7 +382,7 @@ int FileSystem::getinfo(Info& info)
 	FATFS* fs;
 	FRESULT fr = f_getfree("", &nclst, &fs);
 	if(fr == FR_OK) {
-		info.freeSpace = nclst * fs->csize * SECTOR_SIZE;
+		info.freeSpace = volume_size_t(nclst) * fs->csize << sectorSizeShift;
 	}
 	char label[32];
 	DWORD vsn;
