@@ -4702,6 +4702,8 @@ FRESULT f_mkdir (
 				if (fs->fs_type == FS_EXFAT) {	/* Initialize directory entry block */
 					st_dword(fs->dirbuf + XDIR_ModTime, tm);	/* Created time */
 					st_dword(fs->dirbuf + XDIR_ModTZ, TZ_UTC);
+					st_dword(fs->dirbuf + XDIR_AccTime, tm);
+					st_dword(fs->dirbuf + XDIR_AccTZ, TZ_UTC);
 					st_dword(fs->dirbuf + XDIR_FstClus, dcl);	/* Table start cluster */
 					st_dword(fs->dirbuf + XDIR_FileSize, (DWORD)fs->csize * SS(fs));	/* Directory size needs to be valid */
 					st_dword(fs->dirbuf + XDIR_ValidFileSize, (DWORD)fs->csize * SS(fs));
