@@ -106,7 +106,7 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void* buff)
 
 const char* getFatPath(const char* path)
 {
-	return IFS::isRootPath(path) ? "" : path;
+	return isRootPath(path) ? "" : path;
 }
 
 int sysError(FRESULT res)
@@ -123,8 +123,9 @@ int sysError(FRESULT res)
 		return Error::NotFound;
 	case FR_INVALID_NAME:
 		return Error::BadParam;
-	case FR_DENIED:
 	case FR_EXIST:
+		return Error::Exists;
+	case FR_DENIED:
 	case FR_WRITE_PROTECTED:
 		return Error::ReadOnly;
 	case FR_INVALID_OBJECT:
@@ -145,7 +146,7 @@ int sysError(FRESULT res)
 	}
 }
 
-IFS::FileAttributes getAttr(BYTE attr)
+FileAttributes getAttr(BYTE attr)
 {
 	using namespace IFS;
 	FileAttributes res;
@@ -588,7 +589,7 @@ int FileSystem::stat(const char* path, Stat* stat)
 	CHECK_MOUNTED()
 	if(isRootPath(path)) {
 		if(stat != nullptr) {
-			*stat = IFS::Stat{};
+			*stat = Stat{};
 			stat->fs = this;
 			stat->acl = rootAcl;
 			stat->attr = FileAttribute::Directory;
@@ -841,7 +842,7 @@ int FileSystem::readdir(DirHandle dir, Stat& stat)
 		return Error::NoMoreFiles;
 	}
 
-	stat = IFS::Stat{};
+	stat = Stat{};
 	stat.fs = this;
 	fillStat(stat, inf);
 	return FS_OK;
