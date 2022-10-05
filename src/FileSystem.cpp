@@ -225,9 +225,17 @@ OpenFlags mapFileOpenFlags(OpenFlags flags, BYTE& mode)
 		}
 	};
 
+	if(flags[OpenFlag::Create]) {
+		if(flags[OpenFlag::Truncate]) {
+			resultmode |= FA_CREATE_ALWAYS;
+			flags -= OpenFlag::Truncate;
+		} else {
+			resultmode |= FA_OPEN_ALWAYS;
+		}
+		flags -= OpenFlag::Create;
+	}
+
 	map(OpenFlag::Append, FA_OPEN_APPEND);
-	map(OpenFlag::Truncate, FA_CREATE_ALWAYS);
-	map(OpenFlag::Create, FA_CREATE_NEW);
 	map(OpenFlag::Read, FA_READ);
 	map(OpenFlag::Write, FA_WRITE);
 
