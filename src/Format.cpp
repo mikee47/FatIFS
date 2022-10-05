@@ -154,7 +154,7 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	};
 
 	/* Get working buffer */
-	SectorBuffer buffer(1U << param.sectorSizeShift, 1);
+	SectorBuffer buffer(sectorSize, 1);
 	if(!buffer) {
 		return Error::NoMem;
 	}
@@ -217,15 +217,16 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 			fat[1] = 0xFFFFFFFF;
 			clu = 2;
 		}
+		unsigned i = clu % clusterCount;
 		do {
 			/* Create chains of bitmap, up-case and root dir */
-			for(; nbit != 0 && clu < clusterCount; ++clu, --nbit) {
-				fat[clu] = (nbit > 1) ? clu + 1 : 0xFFFFFFFF;
+			for(; nbit != 0 && i < clusterCount; ++i, ++clu, --nbit) {
+				fat[i] = (nbit > 1) ? clu + 1 : 0xFFFFFFFF;
 			}
 			if(nbit == 0 && chainIndex < 3) {
 				nbit = clusterLengths[chainIndex++]; // Next chain length
 			}
-		} while(nbit != 0 && clu < clusterCount);
+		} while(nbit != 0 && i < clusterCount);
 		auto n = std::min(nsect, buffer.sectors());
 		if(!writeSectors(sect, fat, n)) {
 			return Error::WriteFailure;
@@ -294,12 +295,13 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 		// NOTE: vol_flags and percent_in_use NOT included
 		uint32_t sum = 0;
 		for(unsigned i = 0; i < sectorSize; ++i) {
-			if(i == offsetof(EXFAT::boot_sector_t, vol_flags) || i == offsetof(EXFAT::boot_sector_t, vol_flags) + 1) {
+#define IS_FIELD(field)                                                                                                \
+	(i >= offsetof(EXFAT::boot_sector_t, field) &&                                                                     \
+	 i < (offsetof(EXFAT::boot_sector_t, field) + sizeof(EXFAT::boot_sector_t::field)))
+			if(IS_FIELD(vol_flags) || IS_FIELD(percent_in_use)) {
 				continue;
 			}
-			if(i == offsetof(EXFAT::boot_sector_t, percent_in_use)) {
-				continue;
-			}
+#undef IS_FIELD
 			sum = xsum32(buffer[i], sum);
 		}
 		if(!writeSectors(sect++, &bpb, 1)) {
