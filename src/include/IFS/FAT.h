@@ -20,6 +20,7 @@
 #pragma once
 
 #include <IFS/FileSystem.h>
+#include "FAT/Format.h"
 
 namespace IFS
 {
