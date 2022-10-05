@@ -1,0 +1,10 @@
+{
+    "name": "FatIFS test volume",
+    "id": "0x12345678",
+    "source": {
+        "/": "${SMING_HOME}/Core"
+    },
+    "mountpoints": {
+        "fat": 0
+    }
+}

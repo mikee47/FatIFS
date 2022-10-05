@@ -1,0 +1,22 @@
+{
+    "name": "FatIFS test application",
+    "base_config": "standard",
+    "options": [
+        "2m"
+    ],
+    "partitions": {
+        "fwfs0": {
+            "address": "0x00100000",
+            "size": "960K",
+            "type": "data",
+            "subtype": "fwfs",
+            "filename": "out/fwfs1.bin",
+            "build": {
+                "target": "fwfs-build",
+                "config": "fsimage.fwfs"
+            },
+            "readonly": false,
+            "encrypted": false
+        }
+    }
+}
