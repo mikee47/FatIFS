@@ -637,7 +637,7 @@ ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam
 	param = FatParam{};
 
 	if(opt.types - fatTypes) {
-		debug_e("[DISK] calculatePartition invalid types");
+		debug_e("[FAT] calculatePartition invalid types");
 		return Error::BadParam;
 	}
 
@@ -684,7 +684,7 @@ ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam
 
 	// Check for minimum volume size
 	if(volumeSectorCount < 128) {
-		debug_e("[DISK] Volume too small");
+		debug_e("[FAT] Volume too small");
 		return Error::BadParam;
 	}
 
@@ -699,7 +699,7 @@ ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam
 	{
 #ifdef ENABLE_STORAGE_SIZE64
 		if(isSize64(volumeSectorCount)) {
-			debug_e("[DISK] FAT32 volumes limited to 4GB");
+			debug_e("[FAT] FAT32 volumes limited to 4GB");
 			return Error::BadParam;
 		}
 #endif
@@ -710,12 +710,13 @@ ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam
 		} else if(opt.types.none() || opt.types[SysType::fat16]) {
 			param.sysType = SysType::fat16;
 		} else {
+			debug_e("[FAT] Volume too large");
 			return Error::BadParam;
 		}
 
 		auto err = calculateFatParam(param, volumeSectorCount, opt.types.none() || opt.types[SysType::fat32]);
 		if(err) {
-			debug_e("[DISK] FAT parameter calculation failed");
+			debug_e("[FAT] FAT parameter calculation failed");
 			return err;
 		}
 
