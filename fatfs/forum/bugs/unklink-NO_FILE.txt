@@ -1,0 +1,23 @@
+http://elm-chan.org/fsw/ff/bd/?show=3628
+
+
+
+9/18/2021, 8:22 UTC
+#3628: f_unlink return FR_NO_FILE
+Name: pan @&#20013;&#22269;
+ 
+
+
+
+f_open(&fp, "0:test.dat", FA_CREATE_ALWAYS|FA_WRITE); return FR_OK
+f_write(&fp,...) return FR_OK
+f_close(&fp)  return FR_OK
+f_unlink("0:test.dat") return FR_NO_FILE;
+
+and the "test.dat" also in SD Card
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

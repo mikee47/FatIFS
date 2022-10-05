@@ -1,0 +1,27 @@
+http://elm-chan.org/fsw/ff/bd/?show=3681
+
+8/31/2022, 10:19 UTC
+#3681: A bug when testing gpt header
+Name: Zhu Hongbo @Internet
+ 
+
+Hi,developer
+  I have found a bug when using FATFS.
+  When testing test_gpt_header,the code will check sign,version and length.And
+the length of gpt header size must be equal to 92.As follow:
+  if (memcmp(gpth + GPTH_Sign, "EFI PART" "\0\0\1\0" "\x5C\0\0", 16)) return 0; /* Check sign, version (1.0) and length (92) */
+  But there is no requirement that headersize must be equal to 92 in UEFI spec.The
+description is:
+  The HeaderSize must be greater than or equal to 92 and must be less than or equal to the logical
+block size.
+  https://uefi.org/sites/default/files/resources/UEFI_Spec_2_9_2021_03_18.pdf
+  When parsing some gpt,the problem will cause a error.Please fit it,thanks.
+
+Best regards
+Zhu Hongbo
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

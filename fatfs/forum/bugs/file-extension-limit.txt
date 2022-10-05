@@ -1,0 +1,17 @@
+http://elm-chan.org/fsw/ff/bd/?show=3644
+
+
+
+11/5/2021, 11:57 UTC
+#3644: File extension limit
+Name: bluscape @ZA
+ 
+
+It seems like the file extension is limited to 3 characters. I'm trying to read html and shtml files but I only get a FR_INVALID_NAME error.
+Is the file extension limited to 3 characters? And if so, how do I overcome this?
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

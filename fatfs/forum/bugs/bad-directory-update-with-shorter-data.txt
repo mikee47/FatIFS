@@ -1,0 +1,45 @@
+http://elm-chan.org/fsw/ff/bd/?show=3682
+
+9/5/2022, 7:25 UTC
+#3682: Bad directory update with shorter data.
+Name: thln47 @Internet
+ 
+
+Hi everyone,
+
+I use Fatfs to store data on file. I've downloaded the R0.14b (04/04/2022) revision from 'http://elm-chan.org' web site.
+My disk size is 256K, an the disk format is FAT12. I found a mistake on writing shorter data on the same file.
+It's occurs only when shorter data is written.
+
+explanation:
+I write "TOTO :)" (7 bytes long) on my file, then I check it.
+The first write operation is done without problem.
+I write again the same file but with 4 bytes only "TEST".
+When I read again the result is "TEST :)" but not "TEST".
+
+
+I've modified f_write function in ff.c source file to get the right size.
+but I don't know if my code will occur bad behavior in other situation.
+
+ ...
+ /* Check fptr wrap-around (file size cannot reach 4 GiB at FAT volume) */
+ if ((!FF_FS_EXFAT || fs->fs_type != FS_EXFAT) && (DWORD)(fp->fptr + btw) < (DWORD)fp->fptr) {
+  btw = (UINT)(0xFFFFFFFF - (DWORD)fp->fptr);
+ }
+#ifdef _MODIF_THLN
+ if (btw < fp->obj.objsize ) {
+  fp->obj.objsize = btw;
+ }
+#endif
+ for ( ; btw > 0; btw -= wcnt, *bw += wcnt, wbuff += wcnt, fp->fptr += wcnt, fp->obj.objsize = (fp->fptr > fp->obj.objsize) ? fp->fptr : fp->obj.objsize) { /* Repeat until all data written */
+ ...
+
+Let me know if someone had the same error and better correction.
+
+Thanks for reply,
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

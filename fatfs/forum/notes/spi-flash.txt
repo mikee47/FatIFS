@@ -1,0 +1,36 @@
+Using fatfs on SPI flash... what about wear-levelling?
+e.g. does ESP32 wear-levelling accommodate this?
+Why would one ever wish to use FAT on an SPI flash chip?
+
+
+http://elm-chan.org/fsw/ff/bd/?show=3633
+
+
+
+9/28/2021, 21:50 UTC
+#3633: Getting wrong flash capacity after f_mkfs
+Name: MisterBirra
+Child: #3634 
+
+I'm using FatFs 0.14b with SPI flash "W25Q128FV".
+It has capacity of 16777216 bytes.
+Accordingly to datasheet, I've implemented disk_ioctl() with:
+- SECTOR_SIZE = 4096 (each sector is 4KB)
+- BLOCK_SIZE = 16 (each block contains 16 sectors)
+- SECTOR_COUNT = capacity / sectorsize = 4096
+
+To initialize the flash, I call mfks with:
+
+BYTE work[SECTOR_SIZE];
+MKFS_PARM p = {FM_FAT | FM_FAT32, 1, 0, 0, SECTOR_SIZE};
+f_mkfs("", &p, work, sizeof work);
+
+It works, but the value returned by FatFs.capacity() is... 2008 Kbytes.
+Why this number?
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+

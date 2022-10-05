@@ -1,0 +1,22 @@
+
+
+9/19/2022, 18:06 UTC
+#3687: Merge sequential diskio will boost performance
+Name: bloodmage @Internet
+Child: #3688 
+
+Currently f_read/f_write splits disk_read/write calls from sector boundary.
+A simple merge mechanism would improve r/w performance.
+
+I made a patch for this. see:
+https://github.com/espressif/esp-idf/compare/master...bloodmage:esp-idf:patch-1
+It may meet produce behavior inconsistence when error happened during writing.
+
+A simple benchmark using 16k buffer size read, on 4k sector size fat32 sdcard,
+and with 20Mhz freq sdmmc interface, a 33% performance gain is observed. (From 4MB/s to 5.3MB/s)
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

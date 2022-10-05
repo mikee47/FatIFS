@@ -1,0 +1,52 @@
+http://elm-chan.org/fsw/ff/bd/?show=3636
+
+
+
+9/30/2021, 23:16 UTC
+#3636: File does not exists after f_close
+Name: MisterBirra
+ 
+
+I'm on Arduino Zero and I'm using 0.14b + SerialFlash library to write on a Winbond SPI Flash W25Q128FV.
+The creation of the file system (f_mkfs) return FR_OK, then I try creating, writing and reading a test file.
+The first f_open() for writing seems OK, but after closing the file, the next f_open for reading returns FR_NO_FILE.
+
+If I do a memory dump, I can see the contents "my test" at a certain address. So something has actually been written...
+
+Some relevant config:
+SECTOR_SIZE = 4096
+BLOCK_SIZE = 1
+SECTOR_COUNT = 4096
+FF_FS_READONLY = 0
+FF_MULTI_PARTITION = 0
+
+The code:
+
+----------------------------------------
+FATFS fs;
+FRESULT res = f_mount(&fs, "", 1);
+// res = 0, OK
+
+FIL test;
+res = f_open(&test, "TEST.DAT", FA_CREATE_ALWAYS | FA_WRITE);
+// res = 0, OK
+
+char* buff = "my test";
+uint wr;
+res = f_write(&test, buff, strlen(buff), &wr);
+// res = 0, OK
+
+res = f_close(&test);
+// res = 0, OK
+
+res = f_open(&test, "TEST.DAT", FA_READ);
+// res = 4, KO!!!
+----------------------------------------
+
+Can you help me?
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

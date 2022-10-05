@@ -1,0 +1,36 @@
+http://elm-chan.org/fsw/ff/bd/?show=3689
+
+
+
+9/24/2022, 13:45 UTC
+#3689: PATCH: support for exFAT timezone offset
+Name: Richard @Internet
+ 
+
+Here is a patch that adds support for the timezone offset field of exFAT directory entries
+
+https://web.tresorit.com/l/pbmj5#QUICdk8pWEhj3eIjygmykw
+
+The patch introduces a new config setting FF_EXFAT_TZ. Setting that to 1 will change
+
+- the FILINFO structure will have a new field ftz_ofs that holds the timezone offset of the directory entry
+  (as stored in the filesystem). This enables you to display the correct date/time to the user.
+
+- the fat_gettime() user-supplied function return value is changed from DWORD to QWORD, a new type
+  FATTIME_t is introduced to keep the code readable. The fat_gettime() function needs to return the
+  timezone offset (exFAT encoded in a single byte) in bits 32-39 of the return value. Or you can also
+  return all zeros in these bits to indicate that no timezone offset is available.
+
+- if you use f_utime to set explicate date/time, make sure to also set the new ftz_ofs field (either to
+  the correct value or 0).
+
+This timezone offset support is important for exFAT filesystems created or changed on macOS, since
+macOS uses a very weird (though technically correct) timezone: if you live in UTC+x (choose any x) then
+macOS stores the date/time with timezone UTC-x in the filesystem. Ignoring the timezone offset will
+thus result in displaying date/time values shifted by 2x.
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

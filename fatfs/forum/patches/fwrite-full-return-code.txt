@@ -1,0 +1,71 @@
+http://elm-chan.org/fsw/ff/bd/?show=3616
+
+
+
+8/3/2021, 10:28 UTC
+#3616: f_write suggestions
+Name: corrupted @croatia
+ 
+
+Hi,
+I would like to propose patch for f_write() for full volumes and big files.
+Currently, when file is bigger than 4GB or volume is full f_write() returns FR_OK
+and *bw is less than btw.
+I'm proposing two new return values for above mentioned cases:
+FR_FILE_TOO_BIG
+FR_DISK_FULL
+This goes in line with POSIX's write() function that returns EFBIG for oversized files
+and ENOSPC for full volumes.
+
+Patch:
+--- ff.c Sat Apr 17 12:52:14 2021
++++ ff.c Tue Aug  3 11:36:20 2021
+@@ -3970,6 +3970,10 @@
+  /* Check fptr wrap-around (file size cannot reach 4 GiB at FAT volume) */
+  if ((!FF_FS_EXFAT || fs->fs_type != FS_EXFAT) && (DWORD)(fp->fptr + btw) < (DWORD)fp->fptr) {
+   btw = (UINT)(0xFFFFFFFF - (DWORD)fp->fptr);
++  res = FR_FILE_TOO_BIG;
++ }
++ else {
++  res = FR_OK;
+  }
+
+  for ( ; btw > 0; btw -= wcnt, *bw += wcnt, wbuff += wcnt, fp->fptr += wcnt, fp->obj.objsize = (fp->fptr > fp->obj.objsize) ? fp->fptr : fp->obj.objsize) { /* Repeat until all data written */
+@@ -3991,7 +3995,10 @@
+       clst = create_chain(&fp->obj, fp->clust); /* Follow or stretch cluster chain on the FAT */
+      }
+     }
+-    if (clst == 0) break;  /* Could not allocate a new cluster (disk full) */
++    if (clst == 0) {
++     res = FR_DISK_FULL;
++     break;  /* Could not allocate a new cluster (disk full) */
++    }
+     if (clst == 1) ABORT(fs, FR_INT_ERR);
+     if (clst == 0xFFFFFFFF) ABORT(fs, FR_DISK_ERR);
+     fp->clust = clst;   /* Update current cluster */
+@@ -4058,7 +4065,7 @@
+
+  fp->flag |= FA_MODIFIED;    /* Set file change flag */
+
+- LEAVE_FF(fs, FR_OK);
++ LEAVE_FF(fs, res);
+ }
+
+
+--- ff.h Sat Apr 17 12:52:14 2021
++++ ff.h Tue Aug  3 11:37:18 2021
+@@ -293,7 +293,9 @@
+  FR_LOCKED,    /* (16) The operation is rejected according to the file sharing policy */
+  FR_NOT_ENOUGH_CORE,  /* (17) LFN working buffer could not be allocated */
+  FR_TOO_MANY_OPEN_FILES, /* (18) Number of open files > FF_FS_LOCK */
+- FR_INVALID_PARAMETER /* (19) Given parameter is invalid */
++ FR_INVALID_PARAMETER, /* (19) Given parameter is invalid */
++ FR_DISK_FULL,   /* (20) Disk is full */
++ FR_FILE_TOO_BIG   /* (21) File is too big */
+ } FRESULT;
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

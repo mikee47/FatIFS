@@ -1,0 +1,339 @@
+*** ff.c.orig	Sat Apr 17 12:52:14 2021
+--- ff.c	Sat Sep 24 15:15:30 2022
+***************
+*** 2630,2635 ****
+--- 2630,2638 ----
+  		fno->fsize = (fno->fattrib & AM_DIR) ? 0 : ld_qword(fs->dirbuf + XDIR_FileSize);	/* Size */
+  		fno->ftime = ld_word(fs->dirbuf + XDIR_ModTime + 0);	/* Time */
+  		fno->fdate = ld_word(fs->dirbuf + XDIR_ModTime + 2);	/* Date */
++ #if FF_EXFAT_TZ
++ 		fno->ftz_ofs = dirb[XDIR_ModTZ];		/* Timezone offset */
++ #endif
+  		return;
+  	} else
+  #endif
+***************
+*** 3660,3668 ****
+  	DIR dj;
+  	FATFS *fs;
+  #if !FF_FS_READONLY
+! 	DWORD cl, bcs, clst, tm;
+  	LBA_t sc;
+  	FSIZE_t ofs;
+  #endif
+  	DEF_NAMBUF
+  
+--- 3663,3672 ----
+  	DIR dj;
+  	FATFS *fs;
+  #if !FF_FS_READONLY
+! 	DWORD cl, bcs, clst;
+  	LBA_t sc;
+  	FSIZE_t ofs;
++ 	FATTIME_t tm;
+  #endif
+  	DEF_NAMBUF
+  
+***************
+*** 3707,3712 ****
+--- 3711,3717 ----
+  				}
+  			}
+  			if (res == FR_OK && (mode & FA_CREATE_ALWAYS)) {	/* Truncate the file if overwrite mode */
++                 tm = GET_FATTIME();                    /* Set created time */
+  #if FF_FS_EXFAT
+  				if (fs->fs_type == FS_EXFAT) {
+  					/* Get current allocation info */
+***************
+*** 3716,3722 ****
+  					memset(fs->dirbuf + 2, 0, 30);	/* Clear 85 entry except for NumSec */
+  					memset(fs->dirbuf + 38, 0, 26);	/* Clear C0 entry except for NumName and NameHash */
+  					fs->dirbuf[XDIR_Attr] = AM_ARC;
+! 					st_dword(fs->dirbuf + XDIR_CrtTime, GET_FATTIME());
+  					fs->dirbuf[XDIR_GenFlags] = 1;
+  					res = store_xdir(&dj);
+  					if (res == FR_OK && fp->obj.sclust != 0) {	/* Remove the cluster chain if exist */
+--- 3721,3730 ----
+  					memset(fs->dirbuf + 2, 0, 30);	/* Clear 85 entry except for NumSec */
+  					memset(fs->dirbuf + 38, 0, 26);	/* Clear C0 entry except for NumName and NameHash */
+  					fs->dirbuf[XDIR_Attr] = AM_ARC;
+! 					st_dword(fs->dirbuf + XDIR_CrtTime, (DWORD)tm);
+! #if FF_EXFAT_TZ
+!                     fs->dirbuf[XDIR_CrtTZ] = (BYTE)(tm >> 32);
+! #endif
+  					fs->dirbuf[XDIR_GenFlags] = 1;
+  					res = store_xdir(&dj);
+  					if (res == FR_OK && fp->obj.sclust != 0) {	/* Remove the cluster chain if exist */
+***************
+*** 3727,3735 ****
+  #endif
+  				{
+  					/* Set directory entry initial state */
+! 					tm = GET_FATTIME();					/* Set created time */
+! 					st_dword(dj.dir + DIR_CrtTime, tm);
+! 					st_dword(dj.dir + DIR_ModTime, tm);
+  					cl = ld_clust(fs, dj.dir);			/* Get current cluster chain */
+  					dj.dir[DIR_Attr] = AM_ARC;			/* Reset attribute */
+  					st_clust(fs, dj.dir, 0);			/* Reset file allocation info */
+--- 3735,3742 ----
+  #endif
+  				{
+  					/* Set directory entry initial state */
+! 					st_dword(dj.dir + DIR_CrtTime, (DWORD)tm);
+! 					st_dword(dj.dir + DIR_ModTime, (DWORD)tm);
+  					cl = ld_clust(fs, dj.dir);			/* Get current cluster chain */
+  					dj.dir[DIR_Attr] = AM_ARC;			/* Reset attribute */
+  					st_clust(fs, dj.dir, 0);			/* Reset file allocation info */
+***************
+*** 4074,4080 ****
+  {
+  	FRESULT res;
+  	FATFS *fs;
+! 	DWORD tm;
+  	BYTE *dir;
+  
+  
+--- 4081,4087 ----
+  {
+  	FRESULT res;
+  	FATFS *fs;
+! 	FATTIME_t tm;
+  	BYTE *dir;
+  
+  
+***************
+*** 4107,4115 ****
+  						st_dword(fs->dirbuf + XDIR_FstClus, fp->obj.sclust);		/* Update start cluster */
+  						st_qword(fs->dirbuf + XDIR_FileSize, fp->obj.objsize);		/* Update file size */
+  						st_qword(fs->dirbuf + XDIR_ValidFileSize, fp->obj.objsize);	/* (FatFs does not support Valid File Size feature) */
+! 						st_dword(fs->dirbuf + XDIR_ModTime, tm);		/* Update modified time */
+  						fs->dirbuf[XDIR_ModTime10] = 0;
+  						st_dword(fs->dirbuf + XDIR_AccTime, 0);
+  						res = store_xdir(&dj);	/* Restore it to the directory */
+  						if (res == FR_OK) {
+  							res = sync_fs(fs);
+--- 4114,4128 ----
+  						st_dword(fs->dirbuf + XDIR_FstClus, fp->obj.sclust);		/* Update start cluster */
+  						st_qword(fs->dirbuf + XDIR_FileSize, fp->obj.objsize);		/* Update file size */
+  						st_qword(fs->dirbuf + XDIR_ValidFileSize, fp->obj.objsize);	/* (FatFs does not support Valid File Size feature) */
+! 						st_dword(fs->dirbuf + XDIR_ModTime, (DWORD)tm);		/* Update modified time */
+! #if FF_EXFAT_TZ
+!                         fs->dirbuf[XDIR_ModTZ] = (BYTE)(tm >> 32);
+! #endif
+  						fs->dirbuf[XDIR_ModTime10] = 0;
+  						st_dword(fs->dirbuf + XDIR_AccTime, 0);
++ #if FF_EXFAT_TZ
++                         fs->dirbuf[XDIR_AccTZ] = 0;
++ #endif
+  						res = store_xdir(&dj);	/* Restore it to the directory */
+  						if (res == FR_OK) {
+  							res = sync_fs(fs);
+***************
+*** 4127,4133 ****
+  					dir[DIR_Attr] |= AM_ARC;						/* Set archive attribute to indicate that the file has been changed */
+  					st_clust(fp->obj.fs, dir, fp->obj.sclust);		/* Update file allocation information  */
+  					st_dword(dir + DIR_FileSize, (DWORD)fp->obj.objsize);	/* Update file size */
+! 					st_dword(dir + DIR_ModTime, tm);				/* Update modified time */
+  					st_word(dir + DIR_LstAccDate, 0);
+  					fs->wflag = 1;
+  					res = sync_fs(fs);					/* Restore it to the directory */
+--- 4140,4146 ----
+  					dir[DIR_Attr] |= AM_ARC;						/* Set archive attribute to indicate that the file has been changed */
+  					st_clust(fp->obj.fs, dir, fp->obj.sclust);		/* Update file allocation information  */
+  					st_dword(dir + DIR_FileSize, (DWORD)fp->obj.objsize);	/* Update file size */
+! 					st_dword(dir + DIR_ModTime, (DWORD)tm);				/* Update modified time */
+  					st_word(dir + DIR_LstAccDate, 0);
+  					fs->wflag = 1;
+  					res = sync_fs(fs);					/* Restore it to the directory */
+***************
+*** 4991,4997 ****
+  	DIR dj;
+  	FFOBJID sobj;
+  	FATFS *fs;
+! 	DWORD dcl, pcl, tm;
+  	DEF_NAMBUF
+  
+  
+--- 5004,5011 ----
+  	DIR dj;
+  	FFOBJID sobj;
+  	FATFS *fs;
+! 	DWORD dcl, pcl;
+!     FATTIME_t tm;
+  	DEF_NAMBUF
+  
+  
+***************
+*** 5019,5025 ****
+  						memset(fs->win + DIR_Name, ' ', 11);	/* Create "." entry */
+  						fs->win[DIR_Name] = '.';
+  						fs->win[DIR_Attr] = AM_DIR;
+! 						st_dword(fs->win + DIR_ModTime, tm);
+  						st_clust(fs, fs->win, dcl);
+  						memcpy(fs->win + SZDIRE, fs->win, SZDIRE);	/* Create ".." entry */
+  						fs->win[SZDIRE + 1] = '.'; pcl = dj.obj.sclust;
+--- 5033,5039 ----
+  						memset(fs->win + DIR_Name, ' ', 11);	/* Create "." entry */
+  						fs->win[DIR_Name] = '.';
+  						fs->win[DIR_Attr] = AM_DIR;
+! 						st_dword(fs->win + DIR_ModTime, (DWORD)tm);
+  						st_clust(fs, fs->win, dcl);
+  						memcpy(fs->win + SZDIRE, fs->win, SZDIRE);	/* Create ".." entry */
+  						fs->win[SZDIRE + 1] = '.'; pcl = dj.obj.sclust;
+***************
+*** 5032,5038 ****
+  			if (res == FR_OK) {
+  #if FF_FS_EXFAT
+  				if (fs->fs_type == FS_EXFAT) {	/* Initialize directory entry block */
+! 					st_dword(fs->dirbuf + XDIR_ModTime, tm);	/* Created time */
+  					st_dword(fs->dirbuf + XDIR_FstClus, dcl);	/* Table start cluster */
+  					st_dword(fs->dirbuf + XDIR_FileSize, (DWORD)fs->csize * SS(fs));	/* Directory size needs to be valid */
+  					st_dword(fs->dirbuf + XDIR_ValidFileSize, (DWORD)fs->csize * SS(fs));
+--- 5046,5055 ----
+  			if (res == FR_OK) {
+  #if FF_FS_EXFAT
+  				if (fs->fs_type == FS_EXFAT) {	/* Initialize directory entry block */
+! 					st_dword(fs->dirbuf + XDIR_ModTime, (DWORD)tm);	/* Created time */
+! #if FF_EXFAT_TZ
+!                     fs->dirbuf[XDIR_ModTZ] = (BYTE)(tm >> 32);  /* Created timezone offset */
+! #endif
+  					st_dword(fs->dirbuf + XDIR_FstClus, dcl);	/* Table start cluster */
+  					st_dword(fs->dirbuf + XDIR_FileSize, (DWORD)fs->csize * SS(fs));	/* Directory size needs to be valid */
+  					st_dword(fs->dirbuf + XDIR_ValidFileSize, (DWORD)fs->csize * SS(fs));
+***************
+*** 5042,5048 ****
+  				} else
+  #endif
+  				{
+! 					st_dword(dj.dir + DIR_ModTime, tm);	/* Created time */
+  					st_clust(fs, dj.dir, dcl);			/* Table start cluster */
+  					dj.dir[DIR_Attr] = AM_DIR;			/* Attribute */
+  					fs->wflag = 1;
+--- 5059,5065 ----
+  				} else
+  #endif
+  				{
+! 					st_dword(dj.dir + DIR_ModTime, (DWORD)tm);	/* Created time */
+  					st_clust(fs, dj.dir, dcl);			/* Table start cluster */
+  					dj.dir[DIR_Attr] = AM_DIR;			/* Attribute */
+  					fs->wflag = 1;
+***************
+*** 5245,5250 ****
+--- 5262,5270 ----
+  #if FF_FS_EXFAT
+  			if (fs->fs_type == FS_EXFAT) {
+  				st_dword(fs->dirbuf + XDIR_ModTime, (DWORD)fno->fdate << 16 | fno->ftime);
++ #if FF_EXFAT_TZ
++                 fs->dirbuf[XDIR_ModTZ] = fno->ftz_ofs;
++ #endif
+  				res = store_xdir(&dj);
+  			} else
+  #endif
+***************
+*** 5686,5692 ****
+  #else
+  		ss = FF_MAX_SS;
+  #endif
+! 		rnd = (DWORD)sz_drv + GET_FATTIME();	/* Random seed */
+  		align = GPT_ALIGN / ss;				/* Partition alignment for GPT [sector] */
+  		sz_ptbl = GPT_ITEMS * SZ_GPTE / ss;	/* Size of partition table [sector] */
+  		top_bpt = sz_drv - sz_ptbl - 1;		/* Backup partiiton table start sector */
+--- 5706,5712 ----
+  #else
+  		ss = FF_MAX_SS;
+  #endif
+! 		rnd = (DWORD)sz_drv + (DWORD)GET_FATTIME();	/* Random seed */
+  		align = GPT_ALIGN / ss;				/* Partition alignment for GPT [sector] */
+  		sz_ptbl = GPT_ITEMS * SZ_GPTE / ss;	/* Size of partition table [sector] */
+  		top_bpt = sz_drv - sz_ptbl - 1;		/* Backup partiiton table start sector */
+***************
+*** 5934,5940 ****
+  		fsty = FS_FAT16;
+  	} while (0);
+  
+! 	vsn = (DWORD)sz_vol + GET_FATTIME();	/* VSN generated from current time and partitiion size */
+  
+  #if FF_FS_EXFAT
+  	if (fsty == FS_EXFAT) {	/* Create an exFAT volume */
+--- 5954,5960 ----
+  		fsty = FS_FAT16;
+  	} while (0);
+  
+! 	vsn = (DWORD)sz_vol + (DWORD)GET_FATTIME();	/* VSN generated from current time and partitiion size */
+  
+  #if FF_FS_EXFAT
+  	if (fsty == FS_EXFAT) {	/* Create an exFAT volume */
+*** ff.h.orig	Sat Apr 17 12:52:14 2021
+--- ff.h	Sat Sep 24 13:23:52 2022
+***************
+*** 75,86 ****
+--- 75,95 ----
+  #else
+  typedef DWORD LBA_t;
+  #endif
++ #if FF_EXFAT_TZ
++ typedef QWORD FATTIME_t;
++ #else
++ typedef DWORD FATTIME_t;
++ #endif
+  #else
+  #if FF_LBA64
+  #error exFAT needs to be enabled when enable 64-bit LBA
+  #endif
++ #if FF_EXFAT_TZ
++ #error exFAT needs to be enabled when enable timezone
++ #endif
+  typedef DWORD FSIZE_t;
+  typedef DWORD LBA_t;
++ typedef DWORD FATTIME_t;
+  #endif
+  
+  
+***************
+*** 248,253 ****
+--- 257,265 ----
+  	FSIZE_t	fsize;			/* File size */
+  	WORD	fdate;			/* Modified date */
+  	WORD	ftime;			/* Modified time */
++ #if FF_EXFAT_TZ
++     BYTE    ftz_ofs;        /* Modified timezone offset */
++ #endif
+  	BYTE	fattrib;		/* File attribute */
+  #if FF_USE_LFN
+  	TCHAR	altname[FF_SFN_BUF + 1];/* Altenative file name */
+***************
+*** 353,359 ****
+  
+  /* RTC function */
+  #if !FF_FS_READONLY && !FF_FS_NORTC
+! DWORD get_fattime (void);
+  #endif
+  
+  /* LFN support functions */
+--- 365,371 ----
+  
+  /* RTC function */
+  #if !FF_FS_READONLY && !FF_FS_NORTC
+! FATTIME_t get_fattime (void);
+  #endif
+  
+  /* LFN support functions */
+*** ffconf.h.orig	Sat Apr 17 12:52:14 2021
+--- ffconf.h	Sat Sep 24 13:23:52 2022
+***************
+*** 237,242 ****
+--- 237,250 ----
+  /  Note that enabling exFAT discards ANSI C (C89) compatibility. */
+  
+  
++ #define FF_EXFAT_TZ       0
++ /* This option switches exFAT timezone support. (0:Disable or 1:Enable)
++ /  The FILINFO structure will contain the timezone offset in the ftz_ofs element.
++ /  The return type of get_fattime() is extended to QWORD. The timezone offset
++ /  can be returned in bits 32-39, encoded similar to exFAT in unit of quarter hour
++ /  with ORed by 0x80 (or all zeros to omit timezone offset). */
++ 
++ 
+  #define FF_FS_NORTC		0
+  #define FF_NORTC_MON	1
+  #define FF_NORTC_MDAY	1

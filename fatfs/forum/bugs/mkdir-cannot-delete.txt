@@ -1,0 +1,89 @@
+http://elm-chan.org/fsw/ff/bd/?show=3608
+
+
+
+6/28/2021, 10:15 UTC
+#3608: f_mkdir() R0.13b under MPLAB 5.45
+Name: anightin @UK
+Child: #3609 #3611 
+
+I am using the f_mkdir() call for my SD_Card application on an SPI SD interface driven by a PIC18F27K40.
+
+The directory is created Okay and even renamed, but cannot subsequently be deleted by f_unlink(), or via Windows10.
+
+The only solution is to re-format the card.
+
+If I create the directory on Windows10, then it can be deleted.
+
+
+Is there a corrected version of the library that I should be using?
+
+On further investigation the f_unlink() command reports that the (empty) directory created with f_mkdir() is not empty.
+
+Thanks
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+
+
+
+
+6/28/2021, 22:00 UTC
+#3609: Further findings
+Name: anightin @UK
+Parent: #3608 
+
+Doing a chkdsk after calling _mkdir(\homer\h) showed the following:
+
+The type of the file system is FAT.
+Volume Serial Number is 1801-9B9B
+Windows is verifying files and folders...
+\homer\h Errors in . and/or .. corrected.
+Removing nonvalid long folder entry from \homer\h...
+File and folder verification is complete.
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+
+
+
+
+
+6/30/2021, 13:23 UTC
+#3611: Seems to be a write data error issue
+Name: anightin @United Kingdom
+Parent: #3608 
+
+Looks like an issue with the underlying SD SPI driver called by the DiskIO:
+
+PIC Awake and awaiting a command...
+
+SD-Util v2 Compiled on Jun 30 2021 at 14:16:32 by XC8 version 2320
+Host write command =5
+Mkdir Homer...
+DEBUG: write_check sector 14468, byte 0 does not match
+DEBUG: write_check sector 32704, byte 0 does not match
+DEBUG: write_check sector 32704, byte 0 does not match
+DEBUG: write_check sector 16384, byte 0 does not match
+DEBUG: write_check sector 8193, byte 0 does not match
+
+Directory
+SOUND <DIR> attrib=16
+ANDY <DIR> attrib=16
+ASSDISS <DIR> attrib=16
+GAMES <DIR> attrib=16
+HOMER <DIR> attrib=16
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+
+

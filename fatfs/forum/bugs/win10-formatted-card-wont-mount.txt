@@ -1,0 +1,54 @@
+http://elm-chan.org/fsw/ff/bd/?show=3640
+
+
+
+10/28/2021, 0:46 UTC
+#3640: I can't use sd card formatted with windows10
+Name: Hiroaki Kominami @Japan
+Child: #3641 
+
+Hello,
+
+I'm using FatFs R0.14b with RTOS.
+When I format an SD card with a capacity of 32GB or less with the standard function of windows10, an error occurs when reading with FatFs.
+
+The function with the error is mount_volume()
+It having a problem with the code below
+  ff.c: 3509: if (fs-> fsize <(szbfat + (SS (fs) -1)) / SS (fs)) return FR_NO_FILESYSTEM;
+
+For the SD card 32GB I have
+  fs-> fsize: 15304
+  szbfat: 7835912
+  SS (fs): 512
+
+Is this just my problem?
+windows problem?
+Or is it a Fatfs problem?
+I can't judge.
+
+I would appreciate it if you could tell me how to improve it.
+
+Thank you and best regards,
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+
+
+
+
+11/8/2021, 17:20 UTC
+#3646: SD format
+Name: julkas @Internet
+Parent: #3645 
+
+Just try and read this post - https://forum.arduino.cc/t/dont-format-sd-cards-with-os-utilities/222016
+Regards.
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]

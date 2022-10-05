@@ -1,0 +1,50 @@
+http://elm-chan.org/fsw/ff/bd/?show=3642
+
+
+
+11/2/2021, 4:10 UTC
+#3642: EXFAT f_read works but f_write corrupts the folder
+Name: Nima Eskandari @USA
+Child: #3643 
+
+Hello,
+
+I have implemented FATFS for the TMS320F28388D MCU and everything works fine. HOWEVER, when I use exFAT,
+with a correctly formatted SDXC card, the f_read function works correctly (f_open with only read access) while the
+f_write function (f_open with write/create/append) corrupt the current folder. If the current folder is the top directory,
+the whole SD card is corrupted.
+
+After the use of the f_write, the next time the same application is run, the f_mount function fails with DISK_ERR.
+
+
+It is important to note that although f_open and f_write corrupt the filesystem, the first time they are run on a correctly
+formatted SD card, they return FR_OK.
+
+Any help would be EXTREMELY helpful as I am stuck!
+
+Nima
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+
+
+
+
+11/4/2021, 1:23 UTC
+#3643: EXFAT f_read works but f_write corrupts the folder
+Name: Miko @Tokyo, Japan
+Parent: #3642 
+
+Unfortunately, Fatfs won't work on the C2000 and any uC in size of char is not 8-bit.
+Fatfs requires the char type be 8-bit.
+
+Reply to this
+
+Return
+
+[Multiple Language BBS - multi.pl R0.28]
+
+
