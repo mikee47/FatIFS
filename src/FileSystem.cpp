@@ -126,6 +126,7 @@ int sysError(FRESULT res)
 	case FR_EXIST:
 		return Error::Exists;
 	case FR_DENIED:
+		return Error::Denied;
 	case FR_WRITE_PROTECTED:
 		return Error::ReadOnly;
 	case FR_INVALID_OBJECT:
@@ -137,6 +138,10 @@ int sysError(FRESULT res)
 		return Error::BadFileSystem;
 	case FR_TOO_MANY_OPEN_FILES:
 		return Error::OutOfFileDescs;
+	case FR_NO_SPACE:
+		return Error::NoSpace;
+	case FR_FILE_TOO_BIG:
+		return Error::TooBig;
 	case FR_TIMEOUT:
 	case FR_LOCKED:
 	case FR_NOT_ENOUGH_CORE:

@@ -1652,7 +1652,7 @@ static FRESULT dir_sdi (	/* FR_OK(0):succeeded, !=0:error */
 /* Directory handling - Move directory table index next                  */
 /*-----------------------------------------------------------------------*/
 
-static FRESULT dir_next (	/* FR_OK(0):succeeded, FR_NO_FILE:End of table, FR_DENIED:Could not stretch */
+static FRESULT dir_next (	/* FR_OK(0):succeeded, FR_NO_FILE:End of table, FR_NO_SPACE:Could not stretch */
 	DIR* dp,				/* Pointer to the directory object */
 	int stretch				/* 0: Do not stretch table, 1: Stretch table if needed */
 )
@@ -1684,7 +1684,7 @@ static FRESULT dir_next (	/* FR_OK(0):succeeded, FR_NO_FILE:End of table, FR_DEN
 						dp->sect = 0; return FR_NO_FILE;
 					}
 					clst = create_chain(&dp->obj, dp->clust);	/* Allocate a cluster */
-					if (clst == 0) return FR_DENIED;			/* No free cluster */
+					if (clst == 0) return FR_NO_SPACE;			/* No free cluster */
 					if (clst == 1) return FR_INT_ERR;			/* Internal error */
 					if (clst == 0xFFFFFFFF) return FR_DISK_ERR;	/* Disk error */
 					if (dir_clear(fs, clst) != FR_OK) return FR_DISK_ERR;	/* Clean up the stretched table */
@@ -3634,6 +3634,7 @@ FRESULT f_write (
 	/* Check fptr wrap-around (file size cannot reach 4 GiB at FAT volume) */
 	if ((!FF_FS_EXFAT || fs->fs_type != FS_EXFAT) && (DWORD)(fp->fptr + btw) < (DWORD)fp->fptr) {
 		btw = (UINT)(0xFFFFFFFF - (DWORD)fp->fptr);
+		res = FR_FILE_TOO_BIG;
 	}
 
 	for ( ; btw > 0; btw -= wcnt, *bw += wcnt, wbuff += wcnt, fp->fptr += wcnt, fp->obj.objsize = (fp->fptr > fp->obj.objsize) ? fp->fptr : fp->obj.objsize) {	/* Repeat until all data written */
@@ -3655,7 +3656,10 @@ FRESULT f_write (
 						clst = create_chain(&fp->obj, fp->clust);	/* Follow or stretch cluster chain on the FAT */
 					}
 				}
-				if (clst == 0) break;		/* Could not allocate a new cluster (disk full) */
+				if (clst == 0) {
+					res = FR_NO_SPACE;
+					break;  /* Could not allocate a new cluster (disk full) */
+				}
 				if (clst == 1) ABORT(fs, FR_INT_ERR);
 				if (clst == 0xFFFFFFFF) ABORT(fs, FR_DISK_ERR);
 				fp->clust = clst;			/* Update current cluster */
@@ -3723,7 +3727,7 @@ FRESULT f_write (
 	fp->flag |= FA_MODIFIED;				/* Set file change flag */
 	fp->obj.modtime = GET_FATTIME();
 
-	LEAVE_FF(fs, FR_OK);
+	LEAVE_FF(fs, res);
 }
 
 
@@ -4675,7 +4679,7 @@ FRESULT f_mkdir (
 			sobj.fs = fs;						/* New object id to create a new chain */
 			dcl = create_chain(&sobj, 0);		/* Allocate a cluster for the new directory */
 			res = FR_OK;
-			if (dcl == 0) res = FR_DENIED;		/* No space to allocate a new cluster? */
+			if (dcl == 0) res = FR_NO_SPACE;	/* No space to allocate a new cluster? */
 			if (dcl == 1) res = FR_INT_ERR;		/* Any insanity? */
 			if (dcl == 0xFFFFFFFF) res = FR_DISK_ERR;	/* Disk error? */
 			tm = GET_FATTIME();
