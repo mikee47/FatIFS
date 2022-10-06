@@ -507,10 +507,14 @@ int FileSystem::ftruncate(FileHandle file, file_size_t new_size)
 
 	currentVolume = this;
 	FRESULT fr = f_lseek(&fd->fil, new_size);
-	if(fr == FR_OK) {
-		fr = f_truncate(&fd->fil);
+	if(fr != FR_OK) {
+		return sysError(fr);
 	}
-
+	auto curpos = f_tell(&fd->fil);
+	if(curpos != new_size) {
+		return (fd->fil.flag & FA_WRITE) ? Error::NoSpace : Error::SeekBounds;
+	}
+	fr = f_truncate(&fd->fil);
 	return sysError(fr);
 }
 
@@ -546,7 +550,7 @@ int FileSystem::write(FileHandle file, const void* data, size_t size)
 	currentVolume = this;
 	UINT res{0};
 	FRESULT fr = f_write(&fd->fil, data, size, &res);
-	if(res < 0) {
+	if(fr != FR_OK) {
 		int err = sysError(fr);
 		debug_ifserr(err, "write()");
 		return err;
@@ -560,22 +564,41 @@ file_offset_t FileSystem::lseek(FileHandle file, file_offset_t offset, SeekOrigi
 {
 	GET_FD()
 
+	int64_t newOffset = offset;
 	switch(origin) {
 	case SeekOrigin::Start:
 		break;
 	case SeekOrigin::Current:
-		offset += fd->fil.fptr;
+		newOffset += fd->fil.fptr;
 		break;
 	case SeekOrigin::End:
-		offset += fd->fil.obj.objsize;
+		newOffset += fd->fil.obj.objsize;
 		break;
 	default:
 		return Error::BadParam;
 	}
 
+#ifndef ENABLE_FILE_SIZE64
+	// Values past 2GB cannot be returned in signed 32-bit value
+	if(Storage::isSize64(newOffset)) {
+		debug_e("Out of range %lld", newOffset);
+		return Error::SeekBounds;
+	}
+#endif
+	offset = newOffset;
+
 	currentVolume = this;
 	FRESULT fr = f_lseek(&fd->fil, offset);
-	return (fr == FR_OK) ? offset : sysError(fr);
+	if(fr != FR_OK) {
+		return sysError(fr);
+	}
+
+	auto curpos = f_tell(&fd->fil);
+	if(file_offset_t(curpos) == offset) {
+		return offset;
+	}
+
+	return (fd->fil.flag & FA_WRITE) ? Error::TooBig : Error::SeekBounds;
 }
 
 void FileSystem::fillStat(Stat& stat, const S_FILINFO& inf)

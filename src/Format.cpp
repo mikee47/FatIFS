@@ -686,7 +686,7 @@ ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam
 
 	// Check for minimum volume size
 	if(volumeSectorCount < 128) {
-		debug_e("[FAT] Volume too small");
+		debug_e("[FAT] Volume too small, %u sectors", volumeSectorCount);
 		return Error::BadParam;
 	}
 
