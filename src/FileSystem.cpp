@@ -255,7 +255,6 @@ int FileSystem::mount()
 
 	auto res = tryMount();
 	if(res < 0) {
-		debug_w("[FAT] Mount failed");
 		return res;
 	}
 
@@ -277,7 +276,7 @@ int FileSystem::tryMount()
 	if(res != FR_OK) {
 		fatfs.reset();
 		int err = sysError(res);
-		debug_ifserr(err, "mount_volume()");
+		debug_ifserr(err, "[FAT] tryMount");
 		return err;
 	}
 
@@ -313,7 +312,7 @@ int FileSystem::format()
 
 	int err = formatVolume(partition, {sysType});
 	if(err) {
-		debug_ifserr(err, "format()");
+		debug_ifserr(err, "[FAT] format");
 		return err;
 	}
 
@@ -409,7 +408,7 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 		}
 	}
 	if(file < 0) {
-		debug_ifserr(file, "open('%s')", path);
+		debug_ifserr(file, "[FAT] open('%s')", path);
 		return file;
 	}
 
@@ -418,7 +417,7 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 	FRESULT fr = f_open(&fd->fil, getFatPath(path), mode);
 	if(fr != FR_OK) {
 		int err = sysError(fr);
-		debug_d("open('%s'): %s", path, getErrorString(file).c_str());
+		debug_d("[FAT] open('%s'): %s", path, getErrorString(file).c_str());
 		fd.reset();
 		return err;
 	}
@@ -461,7 +460,13 @@ file_offset_t FileSystem::tell(FileHandle file)
 {
 	GET_FD()
 
-	return fd->fil.fptr;
+	int64_t offset = f_tell(&fd->fil);
+	if(file_offset_t(offset) != offset) {
+		debug_w("[FAT] Out of range %lld", offset);
+		return Error::TooBig;
+	}
+
+	return offset;
 }
 
 int FileSystem::ftruncate(FileHandle file, file_size_t new_size)
@@ -499,7 +504,7 @@ int FileSystem::read(FileHandle file, void* data, size_t size)
 	FRESULT fr = f_read(&fd->fil, data, size, &res);
 	if(fr != FR_OK) {
 		int err = sysError(fr);
-		debug_ifserr(err, "read()");
+		debug_ifserr(err, "[FAT] read(%u)", size);
 		return err;
 	}
 
@@ -515,7 +520,7 @@ int FileSystem::write(FileHandle file, const void* data, size_t size)
 	FRESULT fr = f_write(&fd->fil, data, size, &res);
 	if(fr != FR_OK) {
 		int err = sysError(fr);
-		debug_ifserr(err, "write()");
+		debug_ifserr(err, "[FAT] write(%u)", size);
 		return err;
 	}
 
@@ -541,14 +546,15 @@ file_offset_t FileSystem::lseek(FileHandle file, file_offset_t offset, SeekOrigi
 		return Error::BadParam;
 	}
 
-#ifndef ENABLE_FILE_SIZE64
-	// Values past 2GB cannot be returned in signed 32-bit value
-	if(Storage::isSize64(newOffset)) {
-		debug_e("Out of range %lld", newOffset);
+	if(file_offset_t(newOffset) != newOffset) {
+		debug_e("[FAT] lseek(%lld)", newOffset);
+		return Error::TooBig;
+	}
+	offset = newOffset;
+
+	if(offset < 0) {
 		return Error::SeekBounds;
 	}
-#endif
-	offset = newOffset;
 
 	currentVolume = this;
 	FRESULT fr = f_lseek(&fd->fil, offset);
@@ -561,7 +567,9 @@ file_offset_t FileSystem::lseek(FileHandle file, file_offset_t offset, SeekOrigi
 		return offset;
 	}
 
-	return (fd->fil.flag & FA_WRITE) ? Error::TooBig : Error::SeekBounds;
+	debug_w("[FAT] lseek(%lld) -> %lld", int64_t(curpos), int64_t(offset));
+
+	return (fd->fil.flag & FA_WRITE) ? Error::NoSpace : Error::SeekBounds;
 }
 
 void FileSystem::fillStat(Stat& stat, const S_FILINFO& inf)
