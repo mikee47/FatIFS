@@ -111,44 +111,7 @@ const char* getFatPath(const char* path)
 
 int sysError(FRESULT res)
 {
-	using namespace IFS;
-
-	switch(res) {
-	case FR_DISK_ERR:
-		return diskio_write ? Error::WriteFailure : Error::ReadFailure;
-	case FR_NOT_READY:
-		return Error::NotMounted;
-	case FR_NO_FILE:
-	case FR_NO_PATH:
-		return Error::NotFound;
-	case FR_INVALID_NAME:
-		return Error::BadParam;
-	case FR_EXIST:
-		return Error::Exists;
-	case FR_DENIED:
-		return Error::Denied;
-	case FR_WRITE_PROTECTED:
-		return Error::ReadOnly;
-	case FR_INVALID_OBJECT:
-		return Error::BadObject;
-	case FR_INVALID_DRIVE:
-	case FR_NOT_ENABLED:
-		return Error::BadVolumeIndex;
-	case FR_NO_FILESYSTEM:
-		return Error::BadFileSystem;
-	case FR_TOO_MANY_OPEN_FILES:
-		return Error::OutOfFileDescs;
-	case FR_NO_SPACE:
-		return Error::NoSpace;
-	case FR_FILE_TOO_BIG:
-		return Error::TooBig;
-	case FR_TIMEOUT:
-	case FR_LOCKED:
-	case FR_NOT_ENOUGH_CORE:
-	case FR_MKFS_ABORTED:
-	default:
-		return Error::fromSystem(res);
-	}
+	return translateFatfsResult(res, diskio_write);
 }
 
 FileAttributes getAttr(BYTE attr)

@@ -18,34 +18,51 @@
  ****/
 
 #include "include/IFS/FAT/Error.h"
+#include <IFS/Error.h>
 #include "../fatfs/ff.h"
 
+#define FATFS_RESULT_TRANSLATION_MAP(XX)                                                                               \
+	XX(NOT_READY, Error::NotMounted, "The physical drive cannot work")                                                 \
+	XX(NO_FILE, Error::NotFound, "Could not find the file")                                                            \
+	XX(NO_PATH, Error::NotFound, "Could not find the path")                                                            \
+	XX(INVALID_NAME, Error::BadParam, "The path name format is invalid")                                               \
+	XX(DENIED, Error::Denied, "Access denied due to prohibited access or directory full")                              \
+	XX(EXIST, Error::Exists, "Access denied due to prohibited access")                                                 \
+	XX(INVALID_OBJECT, Error::BadObject, "The file/directory object is invalid")                                       \
+	XX(WRITE_PROTECTED, Error::ReadOnly, "The physical drive is write protected")                                      \
+	XX(NOT_ENABLED, Error::NotMounted, "The volume has no work area")                                                  \
+	XX(NO_FILESYSTEM, Error::BadFileSystem, "There is no valid FAT volume")                                            \
+	XX(NOT_ENOUGH_CORE, Error::NoMem, "LFN working buffer could not be allocated")                                     \
+	XX(TOO_MANY_OPEN_FILES, Error::OutOfFileDescs, "Number of open files > FF_FS_LOCK")                                \
+	XX(INVALID_PARAMETER, Error::BadParam, "Given parameter is invalid")                                               \
+	XX(NO_SPACE, Error::NoSpace, "No space")                                                                           \
+	XX(FILE_TOO_BIG, Error::TooBig, "File is too big")
+
 #define FATFS_RESULT_MAP(XX)                                                                                           \
-	XX(OK, 0, "Succeeded")                                                                                             \
-	XX(DISK_ERR, 1, "A hard error occurred in the low level disk I/O layer")                                           \
 	XX(INT_ERR, 2, "Assertion failed")                                                                                 \
-	XX(NOT_READY, 3, "The physical drive cannot work")                                                                 \
-	XX(NO_FILE, 4, "Could not find the file")                                                                          \
-	XX(NO_PATH, 5, "Could not find the path")                                                                          \
-	XX(INVALID_NAME, 6, "The path name format is invalid")                                                             \
-	XX(DENIED, 7, "Access denied due to prohibited access or directory full")                                          \
-	XX(EXIST, 8, "Access denied due to prohibited access")                                                             \
-	XX(INVALID_OBJECT, 9, "The file/directory object is invalid")                                                      \
-	XX(WRITE_PROTECTED, 10, "The physical drive is write protected")                                                   \
 	XX(INVALID_DRIVE, 11, "The logical drive number is invalid")                                                       \
-	XX(NOT_ENABLED, 12, "The volume has no work area")                                                                 \
-	XX(NO_FILESYSTEM, 13, "There is no valid FAT volume")                                                              \
 	XX(MKFS_ABORTED, 14, "The f_mkfs() aborted due to any problem")                                                    \
-	XX(TIMEOUT, 15, "Could not get a grant to access the volume within defined period")                                \
-	XX(LOCKED, 16, "The operation is rejected according to the file sharing policy")                                   \
-	XX(NOT_ENOUGH_CORE, 17, "LFN working buffer could not be allocated")                                               \
-	XX(TOO_MANY_OPEN_FILES, 18, "Number of open files > FF_FS_LOCK")                                                   \
-	XX(INVALID_PARAMETER, 19, "Given parameter is invalid")
+	XX(TIMEOUT, 15, "Could not get a grant to access the volume within defined period")
 
 namespace IFS
 {
 namespace FAT
 {
+int translateFatfsResult(uint8_t result, bool diskio_write)
+{
+	switch(result) {
+	case FR_DISK_ERR:
+		return diskio_write ? Error::WriteFailure : Error::ReadFailure;
+#define XX(res, err, ...)                                                                                              \
+	case FR_##res:                                                                                                     \
+		return err;
+		FATFS_RESULT_TRANSLATION_MAP(XX)
+#undef XX
+	default:
+		return Error::fromSystem(-result);
+	}
+}
+
 String fatfsErrorToStr(uint8_t res)
 {
 	switch(res) {

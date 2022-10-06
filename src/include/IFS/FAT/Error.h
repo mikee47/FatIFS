@@ -25,6 +25,8 @@ namespace IFS
 {
 namespace FAT
 {
+int translateFatfsResult(uint8_t result, bool diskio_write);
+
 String fatfsErrorToStr(uint8_t err);
 
 } // namespace FAT
