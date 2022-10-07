@@ -7,10 +7,7 @@ Notes
 -----
 
 Each :cpp:class:`FatIFS::FileSystem` object handles a single FAT partition.
-Maintain mapping of partitions to logical drive letters so paths can be
-modified accordingly.
 
-For example, "/dir1/root.txt" will be passed to fatfs as "A:\dir1\root.txt".
 
 SD Card connections
 -------------------
@@ -46,7 +43,7 @@ Configuration options
    default: 0 (disabled)
 
    Set to 1 to enable support for EXFAT volumes.
-   Required if enabling :envvar:`ENABLE_STORAGE_SIZE64` option.
+   Requires :envvar:`ENABLE_STORAGE_SIZE64` option.
 
 
 .. envvar:: ENABLE_FAT_TRIM

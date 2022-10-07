@@ -31,15 +31,3 @@ FileSystem* createFatFilesystem(Storage::Partition partition)
 }
 
 } // namespace IFS
-
-bool fatfs_mount()
-{
-	auto part = Storage::findDefaultPartition(Storage::Partition::SubType::Data::fat);
-	return part ? fatfs_mount(part) : false;
-}
-
-bool fatfs_mount(Storage::Partition partition)
-{
-	auto fs = IFS::createFatFilesystem(partition);
-	return fileMountFileSystem(fs);
-}

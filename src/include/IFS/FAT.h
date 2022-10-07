@@ -32,15 +32,3 @@ namespace IFS
 FileSystem* createFatFilesystem(Storage::Partition partition);
 
 } // namespace IFS
-
-/**
- * @brief Mount the first available FAT volume
- * @retval bool true on success
- */
-bool fatfs_mount();
-
-/**
- * @brief Mount FAT volume from a specific partition
- * @retval bool true on success
- */
-bool fatfs_mount(Storage::Partition partition);
