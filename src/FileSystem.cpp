@@ -306,18 +306,21 @@ int FileSystem::format()
 			return 0; // Use any FAT type
 		}
 	};
-	SysTypes sysType = fatfs ? getSysType(fatfs->fs_type) : 0;
+
+	MKFS_PARM opt{
+		.types = fatfs ? getSysType(fatfs->fs_type) : 0,
+	};
 
 	fatfs.reset();
 
-	int err = formatVolume(partition, {sysType});
+	int err = formatVolume(partition, opt);
 	if(err) {
 		debug_ifserr(err, "[FAT] format");
 		return err;
 	}
 
 	// Re-mount
-	return sysType ? tryMount() : FS_OK;
+	return opt.types ? tryMount() : FS_OK;
 }
 
 int FileSystem::check()

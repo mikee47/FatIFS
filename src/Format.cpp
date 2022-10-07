@@ -238,10 +238,11 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	/* Initialize the root directory */
 	buffer.clear();
 	auto dir = buffer.as<EXFAT::exfat_dentry_t[]>();
-	dir[0] = EXFAT::exfat_dentry_t{EXFAT_VOLUME, .volume_label = {
-													 7,
-													 {'N', 'O', ' ', 'N', 'A', 'M', 'E'},
-												 }};
+	String label = param.volumeLabel ?: F("NO NAME");
+	dir[0] = EXFAT::exfat_dentry_t{EXFAT_VOLUME};
+	auto labelLength = std::min(label.length(), sizeof(dir[0].volume_label.label));
+	dir[0].volume_label.num_chars = labelLength;
+	memcpy(dir[0].volume_label.label, label.c_str(), labelLength);
 	dir[1] = EXFAT::exfat_dentry_t{EXFAT_BITMAP, .bitmap = {
 													 .start_clu = 2,
 													 .size = bitmapSize,
@@ -539,6 +540,8 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 		.hidden = uint32_t(partition.address() >> sectorSizeShift), // Volume offset in the physical drive [sector]
 		.total_sect = uint32_t((volumeSectorCount > 0xffff) ? volumeSectorCount : 0), // Volume size in 32-bit LBA
 	};
+	String label = param.volumeLabel ?: F("NO NAME");
+	label.pad(MSDOS_NAME, ' ');
 	if(param.sysType == SysType::fat32) {
 		bpb.fat32 = decltype(bpb.fat32){
 			.fat_length = param.numFatSectors,
@@ -548,17 +551,17 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 			.drive_number = 0x80, // Drive number (for int13)
 			.signature = 0x29,	// Extended boot signature
 			.vol_id = param.volumeSerialNumber,
-			.vol_label = {'N', 'O', ' ', 'N', 'A', 'M', 'E', ' ', ' ', ' ', ' '},
 			.fs_type = FSTYPE_FAT32,
 		};
+		memcpy(bpb.fat32.vol_label, label.c_str(), MSDOS_NAME);
 	} else {
 		bpb.fat16 = decltype(bpb.fat16){
 			.drive_number = 0x80, // Drive number (for int13)
 			.signature = 0x29,	// Extended boot signature
 			.vol_id = param.volumeSerialNumber,
-			.vol_label = {'N', 'O', ' ', 'N', 'A', 'M', 'E', ' ', ' ', ' ', ' '},
 			.fs_type = FSTYPE_FAT,
 		};
+		memcpy(bpb.fat16.vol_label, label.c_str(), MSDOS_NAME);
 	}
 	bpb.signature = BOOT_SIGNATURE;
 	if(!writeSectors(0, &bpb, 1)) {
@@ -637,6 +640,7 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam& param)
 {
 	param = FatParam{};
+	param.volumeLabel = opt.volumeLabel;
 
 	if(opt.types - fatTypes) {
 		debug_e("[FAT] calculatePartition invalid types");

@@ -12,6 +12,7 @@ using Storage::Partition;
 
 /* Format parameter structure */
 struct MKFS_PARM {
+	String volumeLabel;
 	SysTypes types{0};			  ///< Valid partition format types
 	uint8_t numFats{1};			  ///< Number of FATs (1 or 2)
 	unsigned align{0};			  ///< Data area alignment (sector)
@@ -20,6 +21,7 @@ struct MKFS_PARM {
 };
 
 struct FatParam {
+	String volumeLabel;
 	uint32_t sectorsPerBlock; ///< Flash erase block size
 	uint32_t volumeSerialNumber;
 	uint16_t numRootEntries;
