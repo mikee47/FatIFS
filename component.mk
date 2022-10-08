@@ -1,4 +1,4 @@
-COMPONENT_DEPENDS := Storage IFS
+COMPONENT_DEPENDS := DiskStorage IFS
 COMPONENT_INCDIRS := src src/include
 COMPONENT_SRCDIRS := src
 
