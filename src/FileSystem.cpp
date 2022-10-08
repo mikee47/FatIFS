@@ -247,7 +247,7 @@ int FileSystem::mount()
 		return Error::NoPartition;
 	}
 
-	if(partition.fullType() != Storage::Partition::SubType::Data::fat) {
+	if(!partition.verify(Storage::Partition::SubType::Data::fat)) {
 		return Error::BadPartition;
 	}
 
