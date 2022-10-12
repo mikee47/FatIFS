@@ -19,6 +19,26 @@ using Storage::isSize64;
 
 namespace
 {
+/*
+ * Used by `formatVolume` to update partition details
+ */
+class FatPartition : public Partition
+{
+public:
+	void update(const FatParam& param)
+	{
+		auto info = const_cast<Info*>(mPart);
+		FullType ft(Partition::SubType::Data::fat);
+		info->type = ft.type;
+		info->subtype = ft.subtype;
+		auto dp = diskpart();
+		if(dp != nullptr) {
+			auto dpw = const_cast<Storage::Disk::DiskPart*>(dp);
+			dpw->systype = param.sysType;
+		}
+	}
+};
+
 #ifdef ENABLE_EXFAT
 
 uint32_t xsum32(uint8_t dat, uint32_t sum)
@@ -767,7 +787,18 @@ ErrorCode formatVolume(Partition partition, const FatParam& param)
 		err = createFatVolume(partition, param);
 	}
 
-	return err ?: partition.sync() ? Error::Success : Error::WriteFailure;
+	if(err) {
+		return err;
+	}
+
+	if(!partition.sync()) {
+		return Error::WriteFailure;
+	}
+
+	// Update partition details so volume can be mounted
+	static_cast<FatPartition&>(partition).update(param);
+
+	return Error::Success;
 }
 
 } // namespace FAT
