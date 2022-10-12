@@ -1,42 +1,60 @@
 FatIFS
 ======
 
+.. highlight:: c++
+
 IFS library for Sming supporting FAT filesystems.
 
-Notes
------
+Formatting
+----------
 
-Each :cpp:class:`FatIFS::FileSystem` object handles a single FAT partition.
+Use :cpp:func:`IFS::FAT::formatVolume` to format a partition::
+
+   part = ... // Storage::Partition
+   int err = IFS::FAT::formatVolume(part);
+   Serial << "formatVolume: " << IFS::Error::toString(err) << endl;
+
+An optional :cpp:struct:`IFS::FAT::FormatOptions` parameter can be used to provide additional settings::
+
+   IFS::FAT::FormatOptions opt{
+      .volumeLabel = "My FAT volume", // Volume label (distinct from partition name)
+      .types = Storage::Disk::SysType::fat32, // Only use FAT32 for this volume
+   };
+   int err = IFS::FAT::formatVolume(part, opt);
+
+For more detailed low-control over the formatting::
+
+   IFS::FAT::FatParam param;
+   int err = IFS::FAT::calculateFatParam(part, opt, param);
+   if(err == FS_OK) {
+      // .. adjust settings in `param` before formatting
+      int err = IFS::FAT::formatVolume(part, param);
+   }
 
 
-SD Card connections
--------------------
+Mounting FAT volumes
+--------------------
 
-.. figure:: mmc.jpg
+Unlike SPIFFS or LittleFS, failure to mount a filing system does not auto-format the volume.
+Instead, this is left to the application to handle. For example::
 
-   See https://en.wikipedia.org/wiki/SD_card
+   auto fs = IFS::createFatFilesystem(part);
+   if(fs != nullptr) {
+      int err = fs->mount();
+      if(err == Error::BadFileSystem) {
+         // Filesystem layout is invalid...
+         fs->format();
+         err = fs->mount();
+      }
+      if(err != FS_OK) {
+         // Handle error
+      }
+   }
 
-==========  =======  ============  ============  =====  ====  =======  ======================================
-MMC pin     SD pin   miniSD pin    microSD pin   Name   I/O   Logic    Description
-==========  =======  ============  ============  =====  ====  =======  ======================================
-1           1        1             2             nCS    I     PP       SPI Card Select [CS] (Negative logic)
-2           2        2             3             DI     I     PP       SPI Serial Data In [MOSI]
-3           3        3                           VSS    S     S        Ground
-4           4        4             4             VDD    S     S        Power
-5           5        5             5             CLK    I     PP       SPI Serial Clock [SCLK]
-6           6        6             6             VSS    S     S        Ground
-7           7        7             7             DO     O     PP       SPI Serial Data Out [MISO]
--           8        8             8             NC     -     -        Unused (memory cards)
-                                                 nIRQ   O     OD       Interrupt (SDIO cards) (negative logic)
--           9        9             1             NC                    Unused
--           -        10            -             NC                    Reserved
--           -        11            -             NC                    Reserved
-==========  =======  ============  ============  =====  ====  =======  ======================================
 
 
 Configuration options
 ---------------------
-
 
 .. envvar:: ENABLE_EXFAT
 
@@ -66,3 +84,10 @@ Acknowledgements
 - Linux Kernel <https://github.com/torvalds/linux/>
 - Linux utilities https://github.com/util-linux/util-linux
 - Linux FUSE exFAT filing system implementation https://github.com/relan/exfat
+
+
+API Documentation
+-----------------
+
+.. doxygennamespace:: IFS::FAT
+   :members:

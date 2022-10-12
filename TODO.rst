@@ -1,16 +1,6 @@
 FatIFS TODO
 ===========
 
-DiskPart perhaps extraneous
-    Only adds a few fields so these can be added to main Partition struct.
-    This implies that `Partition` knows about these additional fields.
-
-		Uuid guid;
-		uint32_t clusterSize{}; ///< Cluster size (bytes)
-		uint16_t sectorSize{};  ///< Sector size (bytes)
-		SysType systype{};
-		SysIndicator sysind{}; ///< Partition sys value
-
 Sector size
     If sector size is fixed at 512 bytes then device sector size isn't queried.
     Otherwise, fatfs uses sector size reported by device.
@@ -84,4 +74,3 @@ trim
 
 Formatting
     FileSystem::format() should re-format volume using existing settings.
-
