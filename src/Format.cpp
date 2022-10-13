@@ -180,8 +180,7 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	}
 
 #if FF_USE_TRIM
-	// Inform storage device that the volume area may be erased
-	partition.trim(0, partition.size());
+	partition.erase_range(0, partition.size());
 #endif
 
 	auto writeSectors = [&](LBA_t sector, const void* buff, size_t count) -> bool {
@@ -532,8 +531,7 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 	}
 
 #if FF_USE_TRIM
-	// Inform storage device that the volume area may be erased
-	partition.trim(0, partition.size());
+	partition.erase_range(0, partition.size());
 #endif
 
 	auto writeSectors = [&](storage_size_t sector, const void* buff, size_t count) -> bool {
