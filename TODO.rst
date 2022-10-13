@@ -77,8 +77,10 @@ Decide how important os_type / sys_ind field is and how it gets set
     Ideally only write partition entry once. Only an issue for MBR.
 
 trim
-    Best to keep this distinct from `erase_range` as it performs a subtly different function.
+    Best to keep this distinct from ``erase_range`` as it performs a subtly different function.
     Parameters are in sectors (DSS) but should probably change this to byte offsets for clarity.
+
+    UPDATE: remove, just use ``erase_range``
 
 Formatting
     FileSystem::format() should re-format volume using existing settings.
