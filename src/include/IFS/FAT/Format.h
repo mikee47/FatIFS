@@ -10,8 +10,10 @@ namespace FAT
 using namespace Storage::Disk;
 using Storage::Partition;
 
-/* Format parameter structure */
-struct MKFS_PARM {
+/**
+ * @brief Formatting options
+ */
+struct FormatOptions {
 	String volumeLabel;
 	SysTypes types{0};			  ///< Valid partition format types
 	uint8_t numFats{1};			  ///< Number of FATs (1 or 2)
@@ -47,7 +49,7 @@ struct FatParam {
  *
  * When partitioning using MBR format, this method can be used to determine the `Sys indicator` value setting.
  */
-ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam& param);
+ErrorCode calculatePartition(Partition partition, const FormatOptions& opt, FatParam& param);
 
 /**
  * @brief Format disk partition using pre-calculated FAT parameters
@@ -67,7 +69,7 @@ ErrorCode formatVolume(Partition partition, const FatParam& param);
  * @param opt Formatting options
  * @retval ErrorCode
  */
-inline ErrorCode formatVolume(Partition partition, const MKFS_PARM& opt = {})
+inline ErrorCode formatVolume(Partition partition, const FormatOptions& opt = {})
 {
 	FatParam param;
 	return calculatePartition(partition, opt, param) ?: formatVolume(partition, param);
