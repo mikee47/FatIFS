@@ -299,7 +299,7 @@ int FileSystem::format()
 		}
 	};
 
-	MKFS_PARM opt{
+	FormatOptions opt{
 		.types = fatfs ? getSysType(fatfs->fs_type) : 0,
 	};
 

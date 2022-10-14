@@ -655,7 +655,7 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 
 } // namespace
 
-ErrorCode calculatePartition(Partition partition, const MKFS_PARM& opt, FatParam& param)
+ErrorCode calculatePartition(Partition partition, const FormatOptions& opt, FatParam& param)
 {
 	param = FatParam{};
 	param.volumeLabel = opt.volumeLabel;
