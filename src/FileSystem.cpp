@@ -233,7 +233,8 @@ OpenFlags mapFileOpenFlags(OpenFlags flags, BYTE& mode)
 		return Error::FileNotOpen;                                                                                     \
 	}
 
-FileSystem::FileSystem(Storage::Partition partition) : partition(partition)
+FileSystem::FileSystem(Storage::Partition partition)
+	: partition(partition), sectorSizeShift(Storage::getSizeBits(partition.getSectorSize()))
 {
 }
 
@@ -243,6 +244,11 @@ FileSystem::~FileSystem()
 
 int FileSystem::mount()
 {
+	if(fatfs) {
+		// Already mounted
+		return FS_OK;
+	}
+
 	if(!partition) {
 		return Error::NoPartition;
 	}
@@ -250,20 +256,6 @@ int FileSystem::mount()
 	if(!partition.verify(Storage::Partition::SubType::Data::fat)) {
 		return Error::BadPartition;
 	}
-
-	sectorSizeShift = Storage::getSizeBits(partition.getSectorSize());
-
-	auto res = tryMount();
-	if(res < 0) {
-		return res;
-	}
-
-	return res;
-}
-
-int FileSystem::tryMount()
-{
-	assert(!fatfs);
 
 	fatfs.reset(new S_FATFS{});
 	if(!fatfs) {
@@ -320,7 +312,7 @@ int FileSystem::format()
 	}
 
 	// Re-mount
-	return opt.types ? tryMount() : FS_OK;
+	return opt.types ? mount() : FS_OK;
 }
 
 int FileSystem::check()
