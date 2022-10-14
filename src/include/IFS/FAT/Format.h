@@ -41,7 +41,7 @@ struct FatParam {
 };
 
 /**
- * @brief Deduce disk partition parameters for given space
+ * @brief Deduce FAT volume parameters for given space
  * @param partition The partition to format
  * @param opt Formatting options
  * @param param On success, contains calculated parameters for FAT volume
@@ -49,22 +49,22 @@ struct FatParam {
  *
  * When partitioning using MBR format, this method can be used to determine the `Sys indicator` value setting.
  */
-ErrorCode calculatePartition(Partition partition, const FormatOptions& opt, FatParam& param);
+ErrorCode calculateFatParam(Partition partition, const FormatOptions& opt, FatParam& param);
 
 /**
- * @brief Format disk partition using pre-calculated FAT parameters
+ * @brief Format partition using pre-calculated FAT parameters
  * @param partition The partition to format
- * @param param Detailed FAT parameters (returned from `calculatePartition`)
+ * @param param Detailed FAT parameters (returned from `calculateFatParam`)
  * @retval ErrorCode
  *
  * This function allows fine control over exactly how a FAT partition is constructed.
- * Generally the `calculatePartition` function should be used to populate the `param` structure,
+ * Generally the `calculateFatParam` function should be used to populate the `param` structure,
  * then any modifications can be made as required before actually formatting the volume.
  */
 ErrorCode formatVolume(Partition partition, const FatParam& param);
 
 /**
- * @brief Format disk partition
+ * @brief Format partition with a blank FAT volume
  * @param partition The partition to format
  * @param opt Formatting options
  * @retval ErrorCode
@@ -72,7 +72,7 @@ ErrorCode formatVolume(Partition partition, const FatParam& param);
 inline ErrorCode formatVolume(Partition partition, const FormatOptions& opt = {})
 {
 	FatParam param;
-	return calculatePartition(partition, opt, param) ?: formatVolume(partition, param);
+	return calculateFatParam(partition, opt, param) ?: formatVolume(partition, param);
 }
 
 } // namespace FAT

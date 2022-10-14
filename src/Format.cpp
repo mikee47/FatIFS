@@ -660,13 +660,13 @@ ErrorCode createFatVolume(Partition partition, const FatParam& param)
 
 } // namespace
 
-ErrorCode calculatePartition(Partition partition, const FormatOptions& opt, FatParam& param)
+ErrorCode calculateFatParam(Partition partition, const FormatOptions& opt, FatParam& param)
 {
 	param = FatParam{};
 	param.volumeLabel = opt.volumeLabel;
 
 	if(opt.types - fatTypes) {
-		debug_e("[FAT] calculatePartition invalid types");
+		debug_e("[FAT] calculateFatParam invalid types");
 		return Error::BadParam;
 	}
 
