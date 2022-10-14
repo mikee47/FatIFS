@@ -90,7 +90,6 @@ public:
 	}
 
 private:
-	int tryMount();
 	void fillStat(Stat& stat, const S_FILINFO& inf);
 
 	Storage::Partition partition;
