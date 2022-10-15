@@ -6,6 +6,7 @@
 #include <Storage/SD/Card.h>
 #include <Storage/CustomDevice.h>
 #include <SPI.h>
+#include <Storage/BufferedDevice.h>
 
 // Chip selects independent of SPI controller in use
 #ifdef ARCH_ESP32
@@ -41,19 +42,20 @@ using namespace Storage;
 class SdCardTest : public TestGroup
 {
 public:
-	SdCardTest() : TestGroup(_F("SdCard")), card("card1", SPI)
+	SdCardTest() : TestGroup(_F("SdCard")), sdcard("card1", SPI), card(sdcard, "card1b", 16)
 	{
+		Storage::registerDevice(&sdcard);
 		Storage::registerDevice(&card);
 	}
 
 	void execute() override
 	{
-		REQUIRE(card.begin(PIN_CARD_CS));
+		REQUIRE(sdcard.begin(PIN_CARD_CS));
 
 		REQUIRE(fwfs_mount());
 
-		Serial << "CSD" << endl << card.csd << endl;
-		Serial << "CID" << endl << card.cid;
+		Serial << "CSD" << endl << sdcard.csd << endl;
+		Serial << "CID" << endl << sdcard.cid;
 		for(auto part : card.partitions()) {
 			Serial << part << endl;
 		}
@@ -220,7 +222,8 @@ public:
 	}
 
 private:
-	SD::Card card;
+	SD::Card sdcard;
+	BufferedDevice card;
 };
 
 void REGISTER_TEST(sdcard)

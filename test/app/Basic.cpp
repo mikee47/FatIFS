@@ -3,6 +3,7 @@
 #include <IFS/Debug.h>
 #include <IFS/FileCopier.h>
 #include <Storage/Disk.h>
+#include <Storage/BufferedDevice.h>
 
 #ifdef ARCH_HOST
 #include <Storage/HostFileDevice.h>
@@ -410,7 +411,10 @@ public:
 
 		registerDevice(dev);
 
-		return dev;
+		auto bufferedDevice = new Storage::BufferedDevice(*dev, "test-buffered", 8);
+		registerDevice(bufferedDevice);
+
+		return bufferedDevice;
 	}
 
 	Device* openDevice(const String& filename)
@@ -429,7 +433,10 @@ public:
 
 		registerDevice(dev);
 
-		return dev;
+		auto bufferedDevice = new Storage::BufferedDevice(*dev, "test-buffered", 8);
+		registerDevice(bufferedDevice);
+
+		return bufferedDevice;
 	}
 
 	Partition addPartition(Device* dev)
