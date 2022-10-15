@@ -3,7 +3,8 @@
 #include <IFS/Debug.h>
 #include <IFS/FileCopier.h>
 #include <Storage/Disk.h>
-#include <Storage/BufferedDevice.h>
+
+#define NUM_BUFFERED_DEVICE_SECTORS 4
 
 #ifdef ARCH_HOST
 #include <Storage/HostFileDevice.h>
@@ -67,9 +68,12 @@ public:
 		{
 			auto dev = createDevice(DEVICE1_FILENAME, devSize);
 			auto part = addPartition(dev);
+
 			formatVolume(part, sysTypes);
 			auto fs = mountVolume(part);
 			FS_CHECK(copyFiles(*fs, srcPath));
+			Serial << dev->stat << endl;
+
 			delete fs;
 			delete dev;
 		}
@@ -82,6 +86,7 @@ public:
 
 			verifyFiles(*fs, srcPath);
 			Serial << "Files verified." << endl;
+			Serial << dev->stat << endl;
 
 			delete fs;
 			delete dev;
@@ -126,6 +131,8 @@ public:
 			REQUIRE(file.getContent() == "TEST");
 			CHECK(file.close());
 
+			Serial << dev->stat << endl;
+
 			delete fs;
 			delete dev;
 		}
@@ -154,6 +161,8 @@ public:
 			REQUIRE_EQ(fs->stat(FS_dir2, nullptr), IFS::Error::NotFound);
 			FS_CHECK(fs->stat(FS_dir3, nullptr));
 
+			Serial << dev->stat << endl;
+
 			delete fs;
 			delete dev;
 		}
@@ -172,6 +181,8 @@ public:
 			FS_CHECK(fs->remove("test.dat"));
 			REQUIRE_EQ(fs->open("test.dat"), IFS::Error::NotFound);
 
+			Serial << dev->stat << endl;
+
 			delete fs;
 			delete dev;
 		}
@@ -183,6 +194,8 @@ public:
 			formatVolume(part, Disk::SysType::fat16);
 			auto fs = mountVolume(part);
 			REQUIRE_EQ(copyFiles(*fs, srcPath), IFS::Error::NoSpace);
+			Serial << dev->stat << endl;
+
 			delete fs;
 			delete dev;
 		}
@@ -213,6 +226,8 @@ public:
 			}
 			FS_CHECK(fs->close(file));
 
+			Serial << dev->stat << endl;
+
 			delete fs;
 			delete dev;
 		}
@@ -232,6 +247,8 @@ public:
 			FS_CHECK(fs->ftruncate(file, 2 * DIV_GB - 1));
 			REQUIRE_EQ(fs->tell(file), 2 * DIV_GB - 1);
 			FS_CHECK(fs->close(file));
+
+			Serial << dev->stat << endl;
 
 			delete fs;
 			delete dev;
@@ -277,6 +294,10 @@ public:
 				IFS::Debug::listDirectory(Serial, *fs, nullptr);
 				delete fs;
 			}
+
+			Serial << dev->stat << endl;
+
+			delete dev;
 		}
 	}
 
@@ -395,7 +416,7 @@ public:
 		}
 	}
 
-	Device* createDevice(const String& filename, storage_size_t size)
+	Disk::BufferedDevice* createDevice(const String& filename, storage_size_t size)
 	{
 #ifdef ARCH_HOST
 		auto dev = new Storage::HostFileDevice("test", filename, size);
@@ -411,13 +432,13 @@ public:
 
 		registerDevice(dev);
 
-		auto bufferedDevice = new Storage::BufferedDevice(*dev, "test-buffered", 8);
+		auto bufferedDevice = new Storage::Disk::BufferedDevice(*dev, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
 		registerDevice(bufferedDevice);
 
 		return bufferedDevice;
 	}
 
-	Device* openDevice(const String& filename)
+	Disk::BufferedDevice* openDevice(const String& filename)
 	{
 #ifdef ARCH_HOST
 		auto dev = new Storage::HostFileDevice("test", filename);
@@ -433,7 +454,7 @@ public:
 
 		registerDevice(dev);
 
-		auto bufferedDevice = new Storage::BufferedDevice(*dev, "test-buffered", 8);
+		auto bufferedDevice = new Storage::Disk::BufferedDevice(*dev, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
 		registerDevice(bufferedDevice);
 
 		return bufferedDevice;

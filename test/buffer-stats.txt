@@ -1,0 +1,44 @@
+16 buffers (8KBytes):
+    Output LFS used: 676 KB, free: 464220 KB
+    copyFiles(*fs) : Success
+        Read hit 111156 (2748016), miss 2141 (44704)
+        Write hit 11479 (362832), miss 874 (59904)
+        Erase hit 1 (512), miss 1311 (671232)
+    Files verified.
+        Read hit 76316 (1871248), miss 2286 (77104)
+        Write hit 0 (0), miss 0 (0)
+        Erase hit 0 (0), miss 0 (0)
+
+4 buffers (2KBytes):
+    Output LFS used: 676 KB, free: 464220 KB
+    copyFiles(*fs) : Success
+        Read hit 108297 (2683152), miss 5000 (109568)
+        Write hit 11397 (360368), miss 956 (62368)
+        Erase hit 0 (0), miss 1312 (671744)
+    Files verified.
+        Read hit 74934 (1840832), miss 3668 (107520)
+        Write hit 0 (0), miss 0 (0)
+        Erase hit 0 (0), miss 0 (0)
+
+
+2 buffers (1024 bytes):
+    Output LFS used: 676 KB, free: 464220 KB
+    copyFiles(*fs) : Success
+        Read hit 107463 (2668496), miss 5834 (124224)
+        Write hit 11379 (359968), miss 974 (62768)
+        Erase hit 0 (0), miss 1312 (671744)
+    Files verified.
+        Read hit 74325 (1830992), miss 4277 (117360)
+        Write hit 0 (0), miss 0 (0)
+        Erase hit 0 (0), miss 0 (0)
+
+1 buffer (512 bytes):
+    Output LFS used: 676 KB, free: 464220 KB
+    copyFiles(*fs) : Success
+        Read hit 105847 (2633248), miss 7450 (159472)
+        Write hit 11290 (358016), miss 1063 (64720)
+        Erase hit 0 (0), miss 1312 (671744)
+    Files verified.
+        Read hit 73336 (1810992), miss 5266 (137360)
+        Write hit 0 (0), miss 0 (0)
+        Erase hit 0 (0), miss 0 (0)

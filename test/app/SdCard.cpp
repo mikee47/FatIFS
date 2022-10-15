@@ -6,7 +6,7 @@
 #include <Storage/SD/Card.h>
 #include <Storage/CustomDevice.h>
 #include <SPI.h>
-#include <Storage/BufferedDevice.h>
+#include <Storage/Disk/BufferedDevice.h>
 #include <LittleFS.h>
 
 // Chip selects independent of SPI controller in use
@@ -89,6 +89,9 @@ public:
 			fs = mountVolume(part);
 			FS_CHECK(copyFiles(*fs));
 			delete fs;
+
+			Serial << card.stat << endl;
+			card.stat = {};
 		}
 
 		TEST_CASE("Read volume", "Re-open volume then verify all written files")
@@ -118,6 +121,9 @@ public:
 			Serial << "Files verified." << endl;
 
 			delete fs;
+
+			Serial << card.stat << endl;
+			card.stat = {};
 		}
 	}
 
@@ -248,7 +254,7 @@ public:
 
 private:
 	SD::Card sdcard;
-	BufferedDevice card;
+	Disk::BufferedDevice card;
 };
 
 void REGISTER_TEST(sdcard)
