@@ -5,7 +5,8 @@ DISABLE_NETWORK := 1
 COMPONENT_DEPENDS := \
 	SmingTest \
 	FatIFS \
-	SdStorage
+	SdStorage \
+	LittleFS
 
 HWCONFIG := fatifs-test
 

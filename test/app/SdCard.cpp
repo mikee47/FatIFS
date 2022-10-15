@@ -7,6 +7,7 @@
 #include <Storage/CustomDevice.h>
 #include <SPI.h>
 #include <Storage/BufferedDevice.h>
+#include <LittleFS.h>
 
 // Chip selects independent of SPI controller in use
 #ifdef ARCH_ESP32
@@ -70,22 +71,47 @@ public:
 			auto err = Disk::formatDisk(card, table);
 			Serial << "formatDisk: " << err << endl;
 
-			// Format the first partition using FAT
+			// // Format the first partition using FAT
+			// auto part = *card.partitions().begin();
+			// int fmterr = IFS::FAT::formatVolume(part);
+			// Serial << "formatVolume " << IFS::Error::toString(fmterr) << endl;
+			// REQUIRE(fmterr == 0);
+
+			// Format the first partition using LittleFS
 			auto part = *card.partitions().begin();
-			int fmterr = IFS::FAT::formatVolume(part);
+			auto fs = IFS::createLfsFilesystem(part);
+			int fmterr = fs->format();
+			delete fs;
 			Serial << "formatVolume " << IFS::Error::toString(fmterr) << endl;
 			REQUIRE(fmterr == 0);
 
 			// Now mount the volume
-			auto fs = mountVolume(part);
+			fs = mountVolume(part);
 			FS_CHECK(copyFiles(*fs));
 			delete fs;
 		}
 
 		TEST_CASE("Read volume", "Re-open volume then verify all written files")
 		{
+			class LfsPartition : public Partition
+			{
+			public:
+				void update()
+				{
+					auto info = const_cast<Info*>(mPart);
+					FullType ft(Partition::SubType::Data::littlefs);
+					info->type = ft.type;
+					info->subtype = ft.subtype;
+				}
+			};
+
 			Disk::scanPartitions(card);
-			auto part = Storage::findDefaultPartition(Partition::SubType::Data::fat);
+			auto part = *card.partitions().begin();
+			static_cast<LfsPartition&>(part).update();
+
+			for(auto part : card.partitions()) {
+				Serial << part << endl;
+			}
 			auto fs = mountVolume(part);
 
 			verifyFiles(*fs);
@@ -204,10 +230,9 @@ public:
 		}
 	}
 
-
 	IFS::FileSystem* mountVolume(Partition part)
 	{
-		auto fs = IFS::createFatFilesystem(part);
+		auto fs = IFS::createLfsFilesystem(part);
 		int err = fs->mount();
 		debug_i("mount: %s", fs->getErrorString(err).c_str());
 		REQUIRE(err == 0);
