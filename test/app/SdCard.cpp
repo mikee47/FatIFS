@@ -43,7 +43,7 @@ using namespace Storage;
 class SdCardTest : public TestGroup
 {
 public:
-	SdCardTest() : TestGroup(_F("SdCard")), sdcard("card1", SPI), card(sdcard, "card1b", 16)
+	SdCardTest() : TestGroup(_F("SdCard")), sdcard("card1", SPI), card(sdcard, "card1b", 4)
 	{
 		Storage::registerDevice(&sdcard);
 		Storage::registerDevice(&card);
@@ -65,8 +65,9 @@ public:
 		{
 			// Split disk into equal partitions
 			Disk::GPT::PartitionTable table;
-			for(unsigned i = 0; i < 8; ++i) {
-				table.add(String("gpt") + String(i + 1), Disk::SysType::unknown, 0, 100 / 8);
+			table.add(String("gpt1"), Partition::SubType::Data::littlefs, 0, 100 / 8);
+			for(unsigned i = 1; i < 8; ++i) {
+				table.add(String("gpt") + String(i + 1), Disk::SysType::exfat, 0, 100 / 8);
 			}
 			auto err = Disk::formatDisk(card, table);
 			Serial << "formatDisk: " << err << endl;
@@ -96,21 +97,8 @@ public:
 
 		TEST_CASE("Read volume", "Re-open volume then verify all written files")
 		{
-			class LfsPartition : public Partition
-			{
-			public:
-				void update()
-				{
-					auto info = const_cast<Info*>(mPart);
-					FullType ft(Partition::SubType::Data::littlefs);
-					info->type = ft.type;
-					info->subtype = ft.subtype;
-				}
-			};
-
 			Disk::scanPartitions(card);
 			auto part = *card.partitions().begin();
-			static_cast<LfsPartition&>(part).update();
 
 			for(auto part : card.partitions()) {
 				Serial << part << endl;
