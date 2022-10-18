@@ -75,7 +75,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 		TEST_CASE("Read volume", "Re-open volume then verify all written files")
@@ -89,7 +89,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 		TEST_CASE("fatfs forum 3682", "Check handling of re-writing files")
@@ -134,7 +134,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 		TEST_CASE("fatfs forum 3608", "Check creation, renaming and removal of directories")
@@ -164,7 +164,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 		TEST_CASE("fatfs forum 3628", "Check creation and removal of files")
@@ -184,7 +184,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 		TEST_CASE("Full volume", "Writes must fail when volume is full")
@@ -197,7 +197,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 #if defined(ENABLE_STORAGE_SIZE64) && !defined(ENABLE_FILE_SIZE64)
@@ -229,7 +229,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 
 		TEST_CASE("Large seek", "Seeking past 2GB must fail")
@@ -251,7 +251,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			delete dev;
+			destroyDevice();
 		}
 #endif
 
@@ -297,7 +297,7 @@ public:
 
 			Serial << dev->stat << endl;
 
-			delete dev;
+			destroyDevice();
 		}
 	}
 
@@ -418,46 +418,57 @@ public:
 
 	Disk::BufferedDevice* createDevice(const String& filename, storage_size_t size)
 	{
+		CHECK(bufferedDevice == nullptr);
+		CHECK(device == nullptr);
 #ifdef ARCH_HOST
-		auto dev = new Storage::HostFileDevice("test", filename, size);
-#else
-		Device* dev = nullptr;
+		device = new Storage::HostFileDevice("test", filename, size);
 #endif
-		if(dev == nullptr || dev->getSize() == 0) {
+		if(device == nullptr || device->getSize() == 0) {
 			Serial << _F("Failed to create '") << filename << ": " << endl;
 			TEST_ASSERT(false);
 		}
 
-		Serial << "Created \"" << filename << "\", " << dev->getSize() << " bytes." << endl;
+		Serial << "Created \"" << filename << "\", " << device->getSize() << " bytes." << endl;
 
-		registerDevice(dev);
+		REQUIRE(registerDevice(device));
 
-		auto bufferedDevice = new Storage::Disk::BufferedDevice(*dev, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
-		registerDevice(bufferedDevice);
+		bufferedDevice = new Storage::Disk::BufferedDevice(*device, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
+		REQUIRE(registerDevice(bufferedDevice));
 
 		return bufferedDevice;
 	}
 
 	Disk::BufferedDevice* openDevice(const String& filename)
 	{
+		CHECK(bufferedDevice == nullptr);
+		CHECK(device == nullptr);
 #ifdef ARCH_HOST
-		auto dev = new Storage::HostFileDevice("test", filename);
-#else
-		Device* dev = nullptr;
+		device = new Storage::HostFileDevice("test", filename);
 #endif
-		if(dev == nullptr || dev->getSize() == 0) {
+		if(device == nullptr || device->getSize() == 0) {
 			Serial << _F("Failed to open '") << filename << ": " << endl;
 			TEST_ASSERT(false);
 		}
 
-		Serial << "Opened \"" << filename << "\", " << dev->getSize() << " bytes." << endl;
+		Serial << "Opened \"" << filename << "\", " << device->getSize() << " bytes." << endl;
 
-		registerDevice(dev);
+		REQUIRE(registerDevice(device));
 
-		auto bufferedDevice = new Storage::Disk::BufferedDevice(*dev, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
-		registerDevice(bufferedDevice);
+		bufferedDevice = new Storage::Disk::BufferedDevice(*device, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
+		REQUIRE(registerDevice(bufferedDevice));
 
 		return bufferedDevice;
+	}
+
+	void destroyDevice()
+	{
+		CHECK(bufferedDevice != nullptr);
+		delete bufferedDevice;
+		bufferedDevice = nullptr;
+
+		CHECK(device != nullptr);
+		delete device;
+		device = nullptr;
 	}
 
 	Partition addPartition(Device* dev)
@@ -494,6 +505,10 @@ public:
 
 		return fs;
 	}
+
+private:
+	Device* device{nullptr};
+	Disk::BufferedDevice* bufferedDevice{nullptr};
 };
 
 void REGISTER_TEST(basic)
