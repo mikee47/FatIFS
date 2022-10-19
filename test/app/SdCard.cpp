@@ -9,6 +9,8 @@
 #include <Storage/Disk/BufferedDevice.h>
 #include <LittleFS.h>
 
+// #define LFS_TEST
+
 // Chip selects independent of SPI controller in use
 #ifdef ARCH_ESP32
 #define PIN_CARD_CS 21
@@ -45,7 +47,6 @@ class SdCardTest : public TestGroup
 public:
 	SdCardTest() : TestGroup(_F("SdCard")), sdcard("card1", SPI), card(sdcard, "card1b", 4)
 	{
-		Storage::registerDevice(&sdcard);
 		Storage::registerDevice(&card);
 	}
 
@@ -65,53 +66,88 @@ public:
 		{
 			// Split disk into equal partitions
 			Disk::GPT::PartitionTable table;
-			table.add(String("gpt1"), Partition::SubType::Data::littlefs, 0, 100 / 8);
-			for(unsigned i = 1; i < 8; ++i) {
-				table.add(String("gpt") + String(i + 1), Disk::SysType::exfat, 0, 100 / 8);
-			}
+			table.add(F("gpt1-fwfs"), Partition::SubType::Data::fwfs, 0, 100 / 8);
+			table.add(F("gpt2-spiffs"), Partition::SubType::Data::spiffs, 0, 100 / 8);
+			table.add(F("gpt3-littlefs"), Partition::SubType::Data::littlefs, 0, 100 / 8);
+			table.add(F("gpt4-fat"), Partition::SubType::Data::fat, 0, 100 / 8);
 			auto err = Disk::formatDisk(card, table);
 			Serial << "formatDisk: " << err << endl;
 
-			// // Format the first partition using FAT
-			// auto part = *card.partitions().begin();
-			// int fmterr = IFS::FAT::formatVolume(part);
-			// Serial << "formatVolume " << IFS::Error::toString(fmterr) << endl;
-			// REQUIRE(fmterr == 0);
-
-			// Format the first partition using LittleFS
-			auto part = *card.partitions().begin();
-			auto fs = IFS::createLfsFilesystem(part);
-			int fmterr = fs->format();
-			delete fs;
+			auto part = *card.partitions().find(Partition::SubType::Data::fat);
+			int fmterr = IFS::FAT::formatVolume(part);
 			Serial << "formatVolume " << IFS::Error::toString(fmterr) << endl;
 			REQUIRE(fmterr == 0);
-
-			// Now mount the volume
-			fs = mountVolume(part);
-			FS_CHECK(copyFiles(*fs));
-			delete fs;
-
-			Serial << card.stat << endl;
-			card.stat = {};
 		}
 
-		TEST_CASE("Read volume", "Re-open volume then verify all written files")
+		// TEST_CASE("Copy files to SPIFFS")
+		// {
+		// 	auto part = Storage::findDefaultPartition(Partition::SubType::Data::spiffs);
+		// 	auto fs = mountVolume(part);
+		// 	FS_CHECK(copyFiles(*fs));
+		// 	Serial << card.stat << endl;
+		// 	card.stat = {};
+		// 	delete fs;
+		// }
+
+		TEST_CASE("Copy files to LittleFS")
+		{
+			auto part = Storage::findDefaultPartition(Partition::SubType::Data::littlefs);
+			auto fs = mountVolume(part);
+			FS_CHECK(copyFiles(*fs));
+			Serial << card.stat << endl;
+			card.stat = {};
+			delete fs;
+		}
+
+		TEST_CASE("Copy files to FAT")
+		{
+			auto part = Storage::findDefaultPartition(Partition::SubType::Data::fat);
+			auto fs = mountVolume(part);
+			FS_CHECK(copyFiles(*fs));
+			Serial << card.stat << endl;
+			card.stat = {};
+			delete fs;
+		}
+
+		TEST_CASE("Re-scan disk")
 		{
 			Disk::scanPartitions(card);
-			auto part = *card.partitions().begin();
-
 			for(auto part : card.partitions()) {
 				Serial << part << endl;
 			}
-			auto fs = mountVolume(part);
+		}
 
+		// TEST_CASE("Verify SPIFFS")
+		// {
+		// 	auto part = Storage::findDefaultPartition(Partition::SubType::Data::spiffs);
+		// 	auto fs = mountVolume(part);
+		// 	verifyFiles(*fs);
+		// 	Serial << "Files verified." << endl;
+		// 	Serial << card.stat << endl;
+		// 	card.stat = {};
+		// 	delete fs;
+		// }
+
+		TEST_CASE("Verify LittleFS")
+		{
+			auto part = Storage::findDefaultPartition(Partition::SubType::Data::littlefs);
+			auto fs = mountVolume(part);
 			verifyFiles(*fs);
 			Serial << "Files verified." << endl;
-
-			delete fs;
-
 			Serial << card.stat << endl;
 			card.stat = {};
+			delete fs;
+		}
+
+		TEST_CASE("Verify FAT")
+		{
+			auto part = Storage::findDefaultPartition(Partition::SubType::Data::fat);
+			auto fs = mountVolume(part);
+			verifyFiles(*fs);
+			Serial << "Files verified." << endl;
+			Serial << card.stat << endl;
+			card.stat = {};
+			delete fs;
 		}
 	}
 
@@ -210,6 +246,9 @@ public:
 			srcFile.stat(srcStat);
 			IFS::Stat dstStat;
 			dstFile.stat(dstStat);
+			if(abs(srcStat.mtime - dstStat.mtime) >= 2) {
+				Serial << "srctime " << srcStat.mtime.toString() << ", dsttime " << dstStat.mtime.toString() << endl;
+			}
 			CHECK(abs(srcStat.mtime - dstStat.mtime) < 2);
 			CHECK_EQ(srcStat.size, dstStat.size);
 			CHECK_EQ(srcStat.attr, dstStat.attr);
@@ -226,7 +265,22 @@ public:
 
 	IFS::FileSystem* mountVolume(Partition part)
 	{
-		auto fs = IFS::createLfsFilesystem(part);
+		IFS::FileSystem* fs;
+		switch(part.fullType().value()) {
+		case Partition::FullType(Partition::SubType::Data::spiffs).value():
+			fs = IFS::createSpiffsFilesystem(part);
+			break;
+		case Partition::FullType(Partition::SubType::Data::littlefs).value():
+			fs = IFS::createLfsFilesystem(part);
+			break;
+		case Partition::FullType(Partition::SubType::Data::fat).value():
+			fs = IFS::createFatFilesystem(part);
+			break;
+		default:
+			Serial << "Bad partition: " << part << endl;
+			TEST_ASSERT(false);
+		}
+
 		int err = fs->mount();
 		debug_i("mount: %s", fs->getErrorString(err).c_str());
 		REQUIRE(err == 0);

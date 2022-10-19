@@ -6,7 +6,8 @@ COMPONENT_DEPENDS := \
 	SmingTest \
 	FatIFS \
 	SdStorage \
-	LittleFS
+	LittleFS \
+	Spiffs
 
 HWCONFIG := fatifs-test
 
