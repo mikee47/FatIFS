@@ -4,9 +4,7 @@
 #include <IFS/FileCopier.h>
 #include <Storage/Disk.h>
 #include <Storage/SD/Card.h>
-#include <Storage/CustomDevice.h>
 #include <SPI.h>
-#include <Storage/Disk/BufferedDevice.h>
 #include <LittleFS.h>
 
 // #define LFS_TEST
@@ -45,19 +43,19 @@ using namespace Storage;
 class SdCardTest : public TestGroup
 {
 public:
-	SdCardTest() : TestGroup(_F("SdCard")), sdcard("card1", SPI), card(sdcard, "card1b", 4)
+	SdCardTest() : TestGroup(_F("SdCard")), card("card1", SPI)
 	{
 		Storage::registerDevice(&card);
 	}
 
 	void execute() override
 	{
-		REQUIRE(sdcard.begin(PIN_CARD_CS));
+		REQUIRE(card.begin(PIN_CARD_CS));
 
 		REQUIRE(fwfs_mount());
 
-		Serial << "CSD" << endl << sdcard.csd << endl;
-		Serial << "CID" << endl << sdcard.cid;
+		Serial << "CSD" << endl << card.csd << endl;
+		Serial << "CID" << endl << card.cid;
 		for(auto part : card.partitions()) {
 			Serial << part << endl;
 		}
@@ -295,8 +293,7 @@ public:
 	}
 
 private:
-	SD::Card sdcard;
-	Disk::BufferedDevice card;
+	SD::Card card;
 };
 
 void REGISTER_TEST(sdcard)

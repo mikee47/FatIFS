@@ -2,7 +2,6 @@
 #include <Storage/Disk/SectorBuffer.h>
 #include <IFS/TimeStamp.h>
 #include <Storage/Disk/diskdefs.h>
-#include <Storage/CustomDevice.h>
 
 // Definitions from FileSystem
 namespace IFS
@@ -26,10 +25,6 @@ namespace
 class FatPartition : public Partition
 {
 public:
-	FatPartition(const Partition& other) : Partition(other)
-	{
-	}
-
 	void update(const FatParam& param)
 	{
 		auto info = const_cast<Info*>(mPart);
@@ -799,7 +794,7 @@ ErrorCode formatVolume(Partition partition, const FatParam& param)
 	}
 
 	// Update partition details so volume can be mounted
-	FatPartition(partition).update(param);
+	static_cast<FatPartition&>(partition).update(param);
 
 	return Error::Success;
 }

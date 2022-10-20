@@ -3,13 +3,12 @@
 #include <IFS/Debug.h>
 #include <IFS/FileCopier.h>
 #include <Storage/Disk.h>
+#include <Storage/Disk/BlockDevice.h>
 
 #define NUM_BUFFERED_DEVICE_SECTORS 4
 
 #ifdef ARCH_HOST
-#include <Storage/HostFileDevice.h>
-#else
-#include <Storage/CustomDevice.h>
+#include <Storage/Disk/HostFileDevice.h>
 #endif
 
 #define DIV_KB 1024ULL
@@ -75,7 +74,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 		TEST_CASE("Read volume", "Re-open volume then verify all written files")
@@ -89,7 +88,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 		TEST_CASE("fatfs forum 3682", "Check handling of re-writing files")
@@ -134,7 +133,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 		TEST_CASE("fatfs forum 3608", "Check creation, renaming and removal of directories")
@@ -164,7 +163,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 		TEST_CASE("fatfs forum 3628", "Check creation and removal of files")
@@ -184,7 +183,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 		TEST_CASE("Full volume", "Writes must fail when volume is full")
@@ -197,7 +196,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 #if defined(ENABLE_STORAGE_SIZE64) && !defined(ENABLE_FILE_SIZE64)
@@ -229,7 +228,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 
 		TEST_CASE("Large seek", "Seeking past 2GB must fail")
@@ -251,7 +250,7 @@ public:
 			Serial << dev->stat << endl;
 
 			delete fs;
-			destroyDevice();
+			delete dev;
 		}
 #endif
 
@@ -297,7 +296,7 @@ public:
 
 			Serial << dev->stat << endl;
 
-			destroyDevice();
+			delete dev;
 		}
 	}
 
@@ -416,12 +415,11 @@ public:
 		}
 	}
 
-	Disk::BufferedDevice* createDevice(const String& filename, storage_size_t size)
+	Disk::BlockDevice* createDevice(const String& filename, storage_size_t size)
 	{
-		CHECK(bufferedDevice == nullptr);
-		CHECK(device == nullptr);
+		Disk::BlockDevice* device{};
 #ifdef ARCH_HOST
-		device = new Storage::HostFileDevice("test", filename, size);
+		device = new Storage::Disk::HostFileDevice("test", filename, size);
 #endif
 		if(device == nullptr || device->getSize() == 0) {
 			Serial << _F("Failed to create '") << filename << ": " << endl;
@@ -429,21 +427,15 @@ public:
 		}
 
 		Serial << "Created \"" << filename << "\", " << device->getSize() << " bytes." << endl;
-
 		REQUIRE(registerDevice(device));
-
-		bufferedDevice = new Storage::Disk::BufferedDevice(*device, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
-		REQUIRE(registerDevice(bufferedDevice));
-
-		return bufferedDevice;
+		return device;
 	}
 
-	Disk::BufferedDevice* openDevice(const String& filename)
+	Disk::BlockDevice* openDevice(const String& filename)
 	{
-		CHECK(bufferedDevice == nullptr);
-		CHECK(device == nullptr);
+		Disk::BlockDevice* device{};
 #ifdef ARCH_HOST
-		device = new Storage::HostFileDevice("test", filename);
+		device = new Storage::Disk::HostFileDevice("test", filename);
 #endif
 		if(device == nullptr || device->getSize() == 0) {
 			Serial << _F("Failed to open '") << filename << ": " << endl;
@@ -451,29 +443,13 @@ public:
 		}
 
 		Serial << "Opened \"" << filename << "\", " << device->getSize() << " bytes." << endl;
-
 		REQUIRE(registerDevice(device));
-
-		bufferedDevice = new Storage::Disk::BufferedDevice(*device, "test-buffered", NUM_BUFFERED_DEVICE_SECTORS);
-		REQUIRE(registerDevice(bufferedDevice));
-
-		return bufferedDevice;
-	}
-
-	void destroyDevice()
-	{
-		CHECK(bufferedDevice != nullptr);
-		delete bufferedDevice;
-		bufferedDevice = nullptr;
-
-		CHECK(device != nullptr);
-		delete device;
-		device = nullptr;
+		return device;
 	}
 
 	Partition addPartition(Device* dev)
 	{
-		auto& pt = static_cast<CustomDevice*>(dev)->partitions();
+		auto& pt = dev->editable_partitions();
 		auto part = pt.add("TEST", Partition::SubType::Data::fat, 0, dev->getSize());
 		Serial << part << endl;
 		REQUIRE(part);
@@ -505,10 +481,6 @@ public:
 
 		return fs;
 	}
-
-private:
-	Device* device{nullptr};
-	Disk::BufferedDevice* bufferedDevice{nullptr};
 };
 
 void REGISTER_TEST(basic)
