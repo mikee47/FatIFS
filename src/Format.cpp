@@ -261,7 +261,9 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	dir[0] = EXFAT::exfat_dentry_t{EXFAT_VOLUME};
 	auto labelLength = std::min(label.length(), sizeof(dir[0].volume_label.label));
 	dir[0].volume_label.num_chars = labelLength;
-	memcpy(dir[0].volume_label.label, label.c_str(), labelLength);
+	for(unsigned i = 0; i < labelLength; ++i) {
+		dir[0].volume_label.label[i] = label[i];
+	}
 	dir[1] = EXFAT::exfat_dentry_t{EXFAT_BITMAP, .bitmap = {
 													 .start_clu = 2,
 													 .size = bitmapSize,
