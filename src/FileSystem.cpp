@@ -257,7 +257,7 @@ int FileSystem::mount()
 		return Error::BadPartition;
 	}
 
-	fatfs.reset(new S_FATFS{});
+	fatfs = std::make_unique<S_FATFS>();
 	if(!fatfs) {
 		return Error::NoMem;
 	}
@@ -397,7 +397,7 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 	for(unsigned i = 0; i < FATFS_MAX_FDS; ++i) {
 		auto& fd = fileDescriptors[i];
 		if(!fd) {
-			fd.reset(new FileDescriptor);
+			fd = std::make_unique<FileDescriptor>();
 			file = FATFS_HANDLE_MIN + i;
 			break;
 		}
