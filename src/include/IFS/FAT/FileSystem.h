@@ -60,6 +60,7 @@ public:
 	int mkdir(const char* path) override;
 	int stat(const char* path, Stat* stat) override;
 	int fstat(FileHandle file, Stat* stat) override;
+	int fcontrol(FileHandle file, ControlCode code, void* buffer, size_t bufSize) override;
 	int fsetxattr(FileHandle file, AttributeTag tag, const void* data, size_t size) override;
 	int fgetxattr(FileHandle file, AttributeTag tag, void* buffer, size_t size) override;
 	int fenumxattr(FileHandle file, AttributeEnumCallback callback, void* buffer, size_t bufsize) override;

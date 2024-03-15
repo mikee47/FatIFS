@@ -626,6 +626,22 @@ int FileSystem::fstat(FileHandle file, Stat* stat)
 	return FS_OK;
 }
 
+int FileSystem::fcontrol(FileHandle file, ControlCode code, void* buffer, size_t bufSize)
+{
+	switch(code) {
+	case FCNTL_SET_VOLUME_LABEL: {
+		CHECK_MOUNTED()
+
+		String label(static_cast<const char*>(buffer), bufSize);
+		FRESULT fr = f_setlabel(label.c_str());
+		return sysError(fr);
+	}
+
+	default:
+		return Error::NotSupported;
+	}
+}
+
 int FileSystem::fsetxattr(FileHandle file, AttributeTag tag, const void* data, size_t size)
 {
 	GET_FD()

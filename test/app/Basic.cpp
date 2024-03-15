@@ -4,6 +4,7 @@
 #include <IFS/FileCopier.h>
 #include <Storage/Disk.h>
 #include <Storage/Disk/BlockDevice.h>
+#include <Data/CStringArray.h>
 
 #define NUM_BUFFERED_DEVICE_SECTORS 4
 
@@ -267,10 +268,12 @@ public:
 				.types = Disk::SysType::exfat,
 #endif
 			};
+			CStringArray labels;
 			for(auto part : dev->partitions()) {
 				Serial << part << endl;
 				CHECK(part.diskpart() != nullptr);
 				opt.volumeLabel = F("FAT_") + os_random() % 10000;
+				labels += opt.volumeLabel;
 				REQUIRE(IFS::FAT::formatVolume(part, opt) == FS_OK);
 				opt.types = 0;
 			}
@@ -287,6 +290,15 @@ public:
 				REQUIRE(fs->setContent(filename, FS_test));
 				REQUIRE_EQ(fs->getContent(filename), FS_test);
 				IFS::Debug::listDirectory(Serial, *fs, nullptr);
+
+				/*
+				 * Recent versions of fsck added a volume label check which must match boot sector
+				 * This needs to be done after mounting the volume.
+				 */
+				String label = labels.popFront();
+				err = fs->fcontrol(0, IFS::FCNTL_SET_VOLUME_LABEL, label.begin(), label.length());
+				REQUIRE(err == FS_OK);
+
 				delete fs;
 			}
 
