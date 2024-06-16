@@ -35,6 +35,6 @@ execute:
 
 .PHONY: run-test
 run-test: flash run
-ifneq ($(UNAME),Windows)
+ifeq ($(UNAME),Linux)
 	$(Q) ./check-disks.sh
 endif
