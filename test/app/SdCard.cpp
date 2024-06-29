@@ -41,7 +41,7 @@ String abspath(const String& path, const char* name)
 class HostCard : public Disk::HostFileDevice
 {
 public:
-	HostCard(const String& name, SPIBase& spi) : HostFileDevice(name, "out/sdcard.img", 4000000000)
+	HostCard(const String& name, SPIBase&) : HostFileDevice(name, "out/sdcard.img", 4000000000)
 	{
 		const uint8_t csd_data[]{0x40, 0x0e, 0x00, 0x32, 0x5b, 0x59, 0x00, 0x00,
 								 0xee, 0x7f, 0x7f, 0x80, 0x0a, 0x40, 0x40, 0x55};

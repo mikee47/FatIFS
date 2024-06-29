@@ -264,15 +264,17 @@ ErrorCode createExFatVolume(Partition partition, const FatParam& param)
 	for(unsigned i = 0; i < labelLength; ++i) {
 		dir[0].volume_label.label[i] = label[i];
 	}
-	dir[1] = EXFAT::exfat_dentry_t{EXFAT_BITMAP, .bitmap = {
-													 .start_clu = 2,
-													 .size = bitmapSize,
-												 }};
-	dir[2] = EXFAT::exfat_dentry_t{EXFAT_UPCASE, .upcase = {
-													 .checksum = sum_case,
-													 .start_clu = 2 + clusterLengths[0],
-													 .size = szb_case,
-												 }};
+	dir[1] = EXFAT::exfat_dentry_t{.type = EXFAT_BITMAP,
+								   .bitmap = {
+									   .start_clu = 2,
+									   .size = bitmapSize,
+								   }};
+	dir[2] = EXFAT::exfat_dentry_t{.type = EXFAT_UPCASE,
+								   .upcase = {
+									   .checksum = sum_case,
+									   .start_clu = 2 + clusterLengths[0],
+									   .size = szb_case,
+								   }};
 
 	sect = dataStartSector + sectorsPerCluster * (clusterLengths[0] + clusterLengths[1]);
 	nsect = sectorsPerCluster; /* Start of the root directory and number of sectors */
