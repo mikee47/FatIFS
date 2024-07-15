@@ -91,3 +91,5 @@ API Documentation
 
 .. doxygennamespace:: IFS::FAT
    :members:
+
+.. doxygenunion:: FatTime
