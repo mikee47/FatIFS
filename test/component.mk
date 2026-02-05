@@ -35,6 +35,6 @@ execute:
 
 .PHONY: run-test
 run-test: flash run
-ifeq ($(UNAME),Linux)
+ifeq ($(UNAME)$(CI_BUILD_DIR),Linux)
 	$(Q) ./check-disks.sh
 endif
