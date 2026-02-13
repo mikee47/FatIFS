@@ -348,6 +348,11 @@ int FileSystem::getinfo(Info& info)
 
 	info.attr |= Attribute::Mounted;
 	info.volumeSize = partition.size();
+
+	if(info.basicOnly) {
+		return FS_OK;
+	}
+
 	currentVolume = this;
 	DWORD nclst;
 	FATFS* fs;
