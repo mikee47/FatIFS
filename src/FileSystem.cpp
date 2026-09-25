@@ -403,6 +403,9 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 		auto& fd = fileDescriptors[i];
 		if(!fd) {
 			fd = std::make_unique<FileDescriptor>();
+			if(!fd) {
+				return Error::NoMem;
+			}
 			file = FATFS_HANDLE_MIN + i;
 			break;
 		}
