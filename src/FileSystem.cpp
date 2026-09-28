@@ -416,14 +416,6 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 	}
 
 	auto& fd = fileDescriptors[file - FATFS_HANDLE_MIN];
-	currentVolume = this;
-	FRESULT fr = f_open(&fd->fil, getFatPath(path), mode);
-	if(fr != FR_OK) {
-		int err = sysError(fr);
-		debug_d("[FAT] open('%s'): %s", path, getErrorString(file).c_str());
-		fd.reset();
-		return err;
-	}
 
 	// Copy name into descriptor
 	if(path != nullptr) {
@@ -434,6 +426,19 @@ FileHandle FileSystem::open(const char* path, OpenFlags flags)
 			++p;
 		}
 		fd->name = p;
+		if(!fd->name) {
+			fd.reset();
+			return Error::NoMem;
+		}
+	}
+
+	currentVolume = this;
+	FRESULT fr = f_open(&fd->fil, getFatPath(path), mode);
+	if(fr != FR_OK) {
+		int err = sysError(fr);
+		debug_d("[FAT] open('%s'): %s", path, getErrorString(file).c_str());
+		fd.reset();
+		return err;
 	}
 
 	return file;
